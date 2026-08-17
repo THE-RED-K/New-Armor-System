@@ -1,0 +1,8 @@
+{
+  "tooltip.new_armor_system.broken": "损坏的",
+  "tooltip.new_armor_system.mass": "+%s 质量",
+  "tooltip.new_armor_system.load_ratio": "当前负重比例：%s",
+  "tooltip.new_armor_system.load_ratio_preview": "负重比例：%s",
+  "tooltip.new_armor_system.speed_penalty": "移速减益：%s",
+  "tooltip.new_armor_system.knockback_resistance": "击退抗性：%s"
+}
