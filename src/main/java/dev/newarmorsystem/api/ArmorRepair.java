@@ -2,7 +2,6 @@ package dev.newarmorsystem.api;
 
 import net.minecraft.world.item.ArmorItem;
 import net.minecraft.world.item.ArmorMaterial;
-import net.minecraft.world.item.ArmorMaterials;
 import net.minecraft.world.item.ItemStack;
 
 import javax.annotation.Nullable;
@@ -15,10 +14,13 @@ import java.util.Map;
  * <p>单个材料修复量 = 材料耐久基数 × 修理量乘数（默认 4，可配置
  * {@code repairMaterialMultiplier}）× 分类ArmorTypeCoefficient / 修理效率系数，
  * 且不超过当前损坏值（由 {@code AnvilMenu} 的 {@code Math.min} 天然约束）。
- * <p>
- * 内置与自定义材料均纳入公式：内置走 {@link ArmorMaterialRules#durabilityBase}，
- * 自定义（其他模组）经 {@link ArmorMaterialRules#effectiveDurabilityBase} 反推其耐久基数；
+ *
+ * <p>内置与自定义材料均纳入公式：内置走 {@link ArmorMaterialRules#durabilityBase}，
+ * 自定义材料经 {@link ArmorMaterialRules#effectiveDurabilityBase} 查装配期反推并缓存的基数；
  * 分类统一走 {@link ArmorClass}（自定义未登记默认中甲）。
+ *
+ * <p><b>1.20.1 → 1.21.1</b>：材料由枚举变为注册表条目，故所有入口改为接收
+ * {@code ArmorMaterial}（注册表实例），由调用方用 {@code armorItem.getMaterial().value()} 取得。
  *
  * <p>设计定位：护甲材料修复量与基础耐久体系对齐。
  *
@@ -39,8 +41,8 @@ public final class ArmorRepair {
         if (!(stack.getItem() instanceof ArmorItem armor)) {
             return -1; // 非护甲：走原版 maxDamage/4
         }
-        ArmorMaterial material = armor.getMaterial();
-        double base = ArmorMaterialRules.effectiveDurabilityBase(material, armor.getType());
+        ArmorMaterial material = armor.getMaterial().value();
+        double base = ArmorMaterialRules.effectiveDurabilityBase(material);
         if (base <= 0) {
             return -1; // 无法确定基数的护甲：走原版
         }
@@ -66,7 +68,7 @@ public final class ArmorRepair {
      * 只有 <b>{@code null}</b>（或 {@code material == null}）才表示取消登记、
      * 回退全局配置 —— 避免与合法值 0 冲突。
      *
-     * @param material    护甲材料（原版 {@link ArmorMaterials} 枚举值或自定义实现）
+     * @param material    护甲材料（注册表内置条目或自定义实现）
      * @param coefficient 修理花费系数（0 免费；{@code null} 取消登记，回退全局配置）
      */
     public static void registerRepairCostCoefficient(ArmorMaterial material, @Nullable Double coefficient) {
@@ -100,7 +102,7 @@ public final class ArmorRepair {
      */
     public static double repairCostCoefficientOf(ItemStack stack) {
         if (stack.getItem() instanceof ArmorItem armor) {
-            return repairCostCoefficientOf(armor.getMaterial());
+            return repairCostCoefficientOf(armor.getMaterial().value());
         }
         boolean loaded = Config.COMMON_SPEC.isLoaded();
         return loaded ? Config.COMMON.anvilRepairCostCoefficient.get() : 1.0;

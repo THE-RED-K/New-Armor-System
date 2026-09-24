@@ -3,7 +3,7 @@ package dev.newarmorsystem.api;
 import net.minecraft.world.item.ArmorMaterial;
 import net.minecraft.world.item.Item;
 
-import javax.annotation.Nullable;
+import org.jetbrains.annotations.Nullable;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.IdentityHashMap;
@@ -12,7 +12,7 @@ import java.util.Map;
 
 /**
  * 工具耐久法则注册接口 —— 将任意 {@link Item} 纳入
- * "工具耐久 = (护甲耐久基数)^指数 × 修正系数" 法则（见 {@code ItemMixin}）。
+ * "工具耐久 = (护甲耐久基数)^指数 × 修正系数" 法则（见 {@link ToolDurability}）。
  *
  * <p><b>仅支持按物品绑定</b>：Tier 是<b>挖掘/工具等级</b>，会被大量模组复用
  * （同一等级的不同工具、甚至完全无关的物品共用同一 Tier），按 Tier 绑定会一次性
@@ -60,8 +60,14 @@ import java.util.Map;
  * <p>原版工具即通过 Item 级 API 绑定（见
  * {@link CompatRegistration#registerVanillaTools()}，同时充当使用示例）。
  *
- * <p>登记表<b>非线程安全</b>，建议在加载期（与 {@link DamageReflection#register} 同批）调用。
- * 注册值 ≤ 0 视为取消注册（恢复默认行为）。
+ * <p><b>1.20.1 → 1.21.1</b>：键类型不变（仍按护甲材料身份登记）。1.21.1 的
+ * {@link ArmorMaterial} 已由枚举变为注册表条目（记录类型），故调用方用
+ * {@code armorItem.getMaterial().value()} 取得实例再传入
+ * （{@code ArmorMaterials} 的常量同样是 {@code Holder}，需 {@code .value()}）。
+ *
+ * <p>登记表<b>非线程安全</b>，建议在加载期（<b>模组构造期 / 注册期</b>，
+ * 与 {@link DamageReflection#register} 同批）调用 —— 必须早于 {@code ModifyDefaultComponentsEvent}
+ * 装配阶段（见 {@link ToolDurability}）。注册值 ≤ 0 视为取消注册（恢复默认行为）。
  *
  * @author THEREDK
  */

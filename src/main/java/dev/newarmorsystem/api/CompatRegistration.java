@@ -7,7 +7,7 @@ import net.minecraft.world.item.ArmorMaterials;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.Items;
 
-import javax.annotation.Nullable;
+import org.jetbrains.annotations.Nullable;
 
 /**
  * 兼容性模组总登记接口 —— 一次性登记一个护甲材料的全部规则。
@@ -19,7 +19,7 @@ import javax.annotation.Nullable;
  *
  * <pre>{@code
  * CompatRegistration.registerMaterialRulesForTools(
- *     myArmorMaterial,            // 第三方护甲材料
+ *     myArmorMaterial,            // 第三方护甲材料（1.21：getMaterial().value() 取到的注册表实例）
  *     ArmorClass.MEDIUM,          // 护甲类型（null = 不登记，保持默认：内置走内置规则，自定义默认中甲）
  *     32.0,                       // 耐久基数（>0 登记；≤0 不登记，走内置/反推）
  *     1.2,                        // 材料质量系数（>0 登记；≤0 不登记，默认 1.0）
@@ -49,7 +49,11 @@ import javax.annotation.Nullable;
  * {@link ArmorRepair#registerRepairCostCoefficient}、
  * {@link ItemDurabilityRules#registerToolArmorMaterial}（每个 Item 单值绑定，
  * 系数叠加等价于 {@link ItemDurabilityRules#registerToolCoefficient}）。
- * 登记表<b>非线程安全</b>，建议加载期（与 {@link DamageReflection#register} 同批）调用。
+ * 登记表<b>非线程安全</b>，建议加载期（<b>构造期 / 注册期</b>）调用。
+ *
+ * <p><b>1.20.1 → 1.21.1</b>：材料由枚举变为注册表条目（{@code Holder<ArmorMaterial>}），
+ * 故原版常量需 {@code .value()} 取实例（见 {@link #registerVanillaTools()}）；
+ * 附魔/材料相关的注入接口签名同步调整。
  *
  * @author THEREDK
  */
@@ -74,7 +78,7 @@ public final class CompatRegistration {
      * {@link ArmorRepair#registerRepairCostCoefficient(ArmorMaterial, Double)}
      * 传 {@code 0.0}（或全局配置 {@code anvilRepairCostCoefficient} 设 0）。
      *
-     * @param material                护甲材料（原版 {@code ArmorMaterials} 枚举值或自定义实现）
+     * @param material                护甲材料（{@code ArmorMaterials.LEATHER.value()} 等注册表实例或自定义材料）
      * @param armorClass              护甲类型（{@code null} = 不登记，保持默认）
      * @param durabilityBase          耐久基数（> 0 登记；≤ 0 不登记，走内置/反推）
      * @param materialMassCoefficient 材料质量系数（> 0 登记；≤ 0 不登记，默认 1.0）
@@ -118,9 +122,9 @@ public final class CompatRegistration {
      *
      * <p>自动应用到该材料下全部护甲物品的对应部位，各部位可配不同值；
      * 未登记的部位保持原版值。登记后属性面板、玩家实际减伤与 tooltip 显示
-     * 均为新值（显示与效果天然一致，见 {@link ArmorAttributeRules}）。
+     * 均为新值（显示与效果天然一致，见 {@link ArmorAttributeHandler}）。
      *
-     * @param material  护甲材料（原版 {@code ArmorMaterials} 枚举值或自定义实现）
+     * @param material  护甲材料（注册表实例或自定义材料）
      * @param type      部位（头盔 / 胸甲 / 护腿 / 靴子）
      * @param armor     护甲值（≥ 0；0 = 移除护甲值）
      * @param toughness 盔甲韧性（≥ 0；0 = 移除盔甲韧性）
@@ -163,6 +167,9 @@ public final class CompatRegistration {
         ArmorAttributeRules.register(item, slot, armor, toughness);
     }
 
+    /** 原版工具绑定是否已执行（幂等保护：装配阶段与外部调用都只会真正执行一次）。 */
+    private static boolean vanillaToolsRegistered = false;
+
     /**
      * 原版工具绑定示例 —— 按 Item 把原版 25 件工具全部纳入工具耐久法则。
      *
@@ -173,24 +180,32 @@ public final class CompatRegistration {
      * 工具同步联动。
      *
      * <p>木 / 石工具无对应护甲材料，改为显式登记各自配置基数
-     * （{@code woodDurabilityBase} / {@code stoneDurabilityBase}，commonSetup 时读取的
-     * 快照值）；石工具额外登记 {@code × 0.25} 修正系数（原"金式功能性特例"）。
+     * （{@code woodDurabilityBase} / {@code stoneDurabilityBase}）；石工具额外登记
+     * {@code × 0.25} 修正系数（原"金式功能性特例"）。
      *
-     * <p>该方法由本模组在 {@code FMLCommonSetupEvent} 调用；第三方模组可参照此写法
-     * 用 {@link #registerMaterialRulesForTools} 一次登记完整规则。
+     * <p><b>调用时机（1.20.1 → 1.21.1）</b>：1.20.1 由本模组在
+     * {@code FMLCommonSetupEvent} 调用；1.21.1 改由 {@link ToolDurability}
+     * 在 {@code ModifyDefaultComponentsEvent} 装配阶段确保调用一次
+     * （见该类对时序的说明）。本方法<b>幂等</b>，可安全重复调用。
+     * 第三方模组可参照此写法用
+     * {@link #registerMaterialRulesForTools} 一次登记完整规则。
      */
     public static void registerVanillaTools() {
+        if (vanillaToolsRegistered) {
+            return;
+        }
+        vanillaToolsRegistered = true;
         // 铁：原版五件铁工具全部绑定铁护甲材料（共享 B = ironDurabilityBase）
-        registerToolGroup(ArmorMaterials.IRON,
+        registerToolGroup(ArmorMaterials.IRON.value(),
                 Items.IRON_SWORD, Items.IRON_PICKAXE, Items.IRON_AXE, Items.IRON_SHOVEL, Items.IRON_HOE);
         // 金
-        registerToolGroup(ArmorMaterials.GOLD,
+        registerToolGroup(ArmorMaterials.GOLD.value(),
                 Items.GOLDEN_SWORD, Items.GOLDEN_PICKAXE, Items.GOLDEN_AXE, Items.GOLDEN_SHOVEL, Items.GOLDEN_HOE);
         // 钻石
-        registerToolGroup(ArmorMaterials.DIAMOND,
+        registerToolGroup(ArmorMaterials.DIAMOND.value(),
                 Items.DIAMOND_SWORD, Items.DIAMOND_PICKAXE, Items.DIAMOND_AXE, Items.DIAMOND_SHOVEL, Items.DIAMOND_HOE);
         // 下界合金（护甲侧 B = 钻石 + 金/2）
-        registerToolGroup(ArmorMaterials.NETHERITE,
+        registerToolGroup(ArmorMaterials.NETHERITE.value(),
                 Items.NETHERITE_SWORD, Items.NETHERITE_PICKAXE, Items.NETHERITE_AXE,
                 Items.NETHERITE_SHOVEL, Items.NETHERITE_HOE);
         // 木：无护甲材料，显式登记 woodDurabilityBase（默认 7），系数默认 1.0
@@ -201,7 +216,7 @@ public final class CompatRegistration {
                 Items.STONE_SWORD, Items.STONE_PICKAXE, Items.STONE_AXE, Items.STONE_SHOVEL, Items.STONE_HOE);
     }
 
-    /** 把一组工具物品绑定到同一护甲材料（无系数：整组系数取默认 1.0；需要统一系数见下方带系数重载）。 */
+    /** 把一组工具物品绑定到同一护甲材料（无系数：整组系数取默认 1.0）。 */
     private static void registerToolGroup(ArmorMaterial material, Item... tools) {
         for (Item tool : tools) {
             if (tool != null) {

@@ -1,19 +1,19 @@
 package dev.newarmorsystem.api;
 
-import net.minecraftforge.eventbus.api.Event;
+import net.neoforged.bus.api.Event;
 
 /**
  * 护甲减伤结算事件 —— 新护甲减伤公式的结果在返回原版伤害管线之前触发，可改写结算后伤害。
  *
- * <p>本事件由 {@code CombatRules#getDamageAfterAbsorb(float, float, float)} 的
- * {@code @Overwrite} 方法体在 {@link NewCombatRules#getDamageAfterArmor} 公式
+ * <p>本事件由 {@code CombatRules#getDamageAfterAbsorb(LivingEntity, float, DamageSource, float, float)}
+ * 的 {@code @Overwrite} 方法体在 {@link NewCombatRules#getDamageAfterArmor} 公式
  * 结算完成之后、返回之前派发（见 {@code dev.newarmorsystem.mixin.CombatRulesMixin}）。
  * 没有被监听时行为与不派发完全一致：返回值即公式结果。
  *
- * <p><b>为什么不是 {@code LivingEvent}</b>：{@code getDamageAfterAbsorb} 是
- * {@code LivingEntity#getDamageAfterArmorAbsorb} 调用的静态工具方法，调用点没有
- * 受击实体上下文，故本事件不带实体。需要实体的监听者请配合 Forge 原生
- * {@code LivingHurtEvent} / {@code LivingDamageEvent} 使用 —— 两者分别在本公式
+ * <p><b>为什么不是 {@code LivingEvent}</b>：1.21.1 起该方法虽然新增了 {@code LivingEntity} 与
+ * {@code DamageSource} 形参，但它们只是厂商计算的输入，事件仍然只开放<b>结果出口</b>，
+ * 故本事件不带实体。需要实体的监听者请配合 NeoForge 原生
+ * {@code LivingIncomingDamageEvent} / {@code LivingDamageEvent} 使用 —— 两者分别在本公式
  * <b>之前</b>（可改原始伤害）与<b>之后</b>（可改最终伤害）触发。
  *
  * <p><b>不可取消</b>：「绕过护甲直接吃满伤害」用 {@link #setNewDamage(float)}
@@ -53,12 +53,6 @@ public class ArmorReduceEvent extends Event {
         this.toughness = toughness;
         this.originalDamage = originalDamage;
         this.newDamage = originalDamage;
-    }
-
-    /** 本事件不可取消：改写结果请用 {@link #setNewDamage(float)}。 */
-    @Override
-    public boolean isCancelable() {
-        return false;
     }
 
     /** @return 护甲结算前的原始伤害 */

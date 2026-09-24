@@ -1,7 +1,7 @@
 package dev.newarmorsystem.api;
 
 import net.minecraft.world.entity.player.Player;
-import net.minecraftforge.event.entity.player.PlayerEvent;
+import net.neoforged.neoforge.event.entity.player.PlayerEvent;
 
 /**
  * 玩家摔落伤害结算事件 —— 质量系统摔落公式的结果在返回原版管线之前触发，可改写最终伤害。
@@ -11,19 +11,17 @@ import net.minecraftforge.event.entity.player.PlayerEvent;
  * 结算完成之后派发，结算函数的返回值取 {@link #getDamage()}。
  * 没有被监听时行为与不派发完全一致（返回公式结果的向上取整值）。
  *
- * <p><b>与 Forge 原生 {@code LivingFallEvent} 的关系</b>：{@code LivingFallEvent}
+ * <p><b>与 NeoForge 原生 {@code LivingFallEvent} 的关系</b>：{@code LivingFallEvent}
  * 在公式<b>之前</b>触发，只能改下落距离与伤害倍率（两者均已进入本公式）；
  * 本事件在公式<b>之后</b>触发，改的是公式结果。顺序：
  * {@code LivingFallEvent} → 本事件 → 原版后续逻辑（摔落音效、{@code hurt}）。
  *
- * <p><b>不可取消</b>：「免除本次摔落伤害」用 {@link #setDamage(int)} 设 0 即可表达
- * （与取消语义等价，且不影响原版后续流程对 0 伤害的处理）。
+ * <p><b>不可取消</b>：「免除本次摔落伤害」用 {@link #setDamage(int)} 设 0 即可表达。
  *
  * <p><b>派发范围</b>：安全高度以内（公式结果 0）同样派发 —— 监听者可以对
- * "本不该受伤的坠落"附加效果；无监听者时 0 原样返回，行为不变。
- * 仅服务端结算链路派发（{@code LivingEntity#calculateFallDamage}，由
- * {@code LivingEntityFallDamageMixin} 仅对玩家重定向；非玩家原样走原版公式，
- * 不派发本事件）。
+ * "本不该受伤的坠落"附加效果。仅服务端结算链路派发
+ * （{@code LivingEntity#calculateFallDamage}，由 {@code LivingEntityFallDamageMixin}
+ * 仅对玩家重定向；非玩家原样走原版公式，不派发本事件）。
  *
  * @author THEREDK
  */
@@ -64,12 +62,6 @@ public class PlayerFallDamageEvent extends PlayerEvent {
         this.safeHeight = safeHeight;
         this.originalDamage = originalDamage;
         this.damage = originalDamage;
-    }
-
-    /** 本事件不可取消：免除伤害请用 {@link #setDamage(int)} 设 0。 */
-    @Override
-    public boolean isCancelable() {
-        return false;
     }
 
     /** @return 下落高度（格，已含 {@code LivingFallEvent} 的修改） */

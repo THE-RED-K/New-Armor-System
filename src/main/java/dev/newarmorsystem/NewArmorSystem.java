@@ -1,47 +1,38 @@
 package dev.newarmorsystem;
 
-import net.minecraftforge.common.MinecraftForge;
-import net.minecraftforge.fml.ModLoadingContext;
-import net.minecraftforge.fml.config.ModConfig;
-import net.minecraftforge.eventbus.api.IEventBus;
-import net.minecraftforge.fml.common.Mod;
-import net.minecraftforge.fml.event.lifecycle.FMLCommonSetupEvent;
-import net.minecraftforge.fml.javafmlmod.FMLJavaModLoadingContext;
-
-import dev.newarmorsystem.api.CompatRegistration;
+import dev.newarmorsystem.api.ArmorAttributeHandler;
+import dev.newarmorsystem.api.ArmorDurability;
 import dev.newarmorsystem.api.Config;
 import dev.newarmorsystem.api.PlayerMassEffects;
+import dev.newarmorsystem.api.ToolDurability;
+import net.neoforged.bus.api.IEventBus;
+import net.neoforged.fml.ModContainer;
+import net.neoforged.fml.common.Mod;
+import net.neoforged.fml.config.ModConfig;
+import net.neoforged.neoforge.common.NeoForge;
 
-// The value here should match an entry in the META-INF/mods.toml file
+// The value here should match an entry in the META-INF/neoforge.mods.toml file
 @Mod(NewArmorSystem.MOD_ID)
-public class NewArmorSystem
-{
+public class NewArmorSystem {
     // Define mod id in a common place for everything to reference
     public static final String MOD_ID = "new_armor_system";
-    public NewArmorSystem(FMLJavaModLoadingContext context)
-    {
-        IEventBus modEventBus = context.getModEventBus();
 
-        //region ModEventBus
+    // FML will recognize some parameter types like IEventBus or ModContainer and pass them in automatically.
+    public NewArmorSystem(IEventBus modEventBus, ModContainer modContainer) {
+        // Register our mod's ModConfigSpec so that FML can create and load the config file for us
+        modContainer.registerConfig(ModConfig.Type.COMMON, Config.COMMON_SPEC);
 
+        // 护甲耐久体系：注册期改写每件护甲的 MAX_DAMAGE（部位系数 × 材料耐久基数 × 护甲类型系数）
+        modEventBus.addListener(ArmorDurability::onModifyDefaultComponents);
 
-        //end region
+        // 工具耐久公式（默认关闭）：同一组件阶段改写 TieredItem 的 MAX_DAMAGE。
+        // 必须注册在 ArmorDurability 之后 —— 自定义材料的耐久基数来自护甲侧的装配期反推缓存。
+        modEventBus.addListener(ToolDurability::onModifyDefaultComponents);
 
-        ModLoadingContext.get().registerConfig(ModConfig.Type.COMMON, Config.COMMON_SPEC);
+        // 质量系统的玩家效果：移速减益 / 击退抗性 / 重力联动（每 tick 派生）
+        NeoForge.EVENT_BUS.register(PlayerMassEffects.class);
 
-        // Register the commonSetup method for modloading
-        modEventBus.addListener(this::commonSetup);
-
-        // Register ourselves for server and other game events we are interested in
-        MinecraftForge.EVENT_BUS.register(this);
-        MinecraftForge.EVENT_BUS.register(PlayerMassEffects.class);
-    }
-
-    private void commonSetup(final FMLCommonSetupEvent event)
-    {
-        // 原版工具绑定示例：按 Item 把原版 25 件工具全部纳入工具耐久法则
-        // （铁/金/钻石/下界合金绑定各自护甲材料共享 B；木/石显式登记配置基数）。
-        // 工具耐久公式开启时生效，默认关闭无影响。
-        CompatRegistration.registerVanillaTools();
+        // 护甲值 / 盔甲韧性覆写：在物品属性计算阶段接管 ARMOR / ARMOR_TOUGHNESS 条目
+        NeoForge.EVENT_BUS.register(ArmorAttributeHandler.class);
     }
 }

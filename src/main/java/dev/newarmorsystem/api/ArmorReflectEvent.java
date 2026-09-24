@@ -3,22 +3,29 @@ package dev.newarmorsystem.api;
 import java.util.Collections;
 import java.util.Map;
 
-import javax.annotation.Nullable;
+import org.jetbrains.annotations.Nullable;
 
 import net.minecraft.world.damagesource.DamageSource;
 import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.LivingEntity;
-import net.minecraftforge.event.entity.living.LivingEvent;
+import net.neoforged.bus.api.ICancellableEvent;
+import net.neoforged.neoforge.event.entity.living.LivingEvent;
 
 /**
  * 荆棘反伤事件 —— 护甲损失耐久产生的反伤在真正施加之前触发，可改写反伤量 / 目标或取消。
  *
- * <p>本事件由 {@code Inventory#hurtArmor(DamageSource, float, int[])} 的
- * {@code @Overwrite} 方法体在<b>按件累积完反伤量之后、对目标施加 {@code thorns}
- * 伤害之前</b>派发（见 {@code dev.newarmorsystem.mixin.InventoryMixin}）。
+ * <p>本事件由 {@link ArmorHurtHandler#apply} 在<b>护甲耐久真正扣除之后、累积反伤量施加之前</b>
+ * 派发（见 {@code dev.newarmorsystem.mixin.LivingEntityHurtEquipmentMixin}）。
  * 没有被监听时行为与不派发完全一致：反伤量 = 各件
- * （{@link DamageReflection#of} 材料比例 + 荆棘附魔等级 × 60%）× 该件实际损耗的耐久
- * 之和，目标与伤害类型也与公式路径一致。
+ * （{@link DamageReflection#of} 材料比例 + 荆棘附魔等级 × 60%）× 该件实际损耗的耐久之和，
+ * 目标与伤害类型也与公式路径一致。
+ *
+ * <p><b>1.20.1 → 1.21.1</b>：派发位置由 {@code Inventory#hurtArmor} 的 {@code @Overwrite}
+ * 方法体改为 {@code ArmorHurtHandler#apply}（1.21.1 的护甲损耗已上移到
+ * {@code LivingEntity#doHurtEquipment}，且原生 {@code ArmorHurtEvent} 已由 NeoForge 提供，
+ * 故本模组不再自备"护甲受损事件"，直接复用原生事件 —— 见 {@link ArmorHurtHandler}）。
+ * 本事件本身是<b>模组自有扩展</b>（原生无对应事件），故按原样移植。
+ * 取消方式改为实现 {@link ICancellableEvent}（1.21.1 起不再覆写 {@code isCancelable()}）。
  *
  * <p><b>默认目标</b>：任一受损护甲开启 {@link DamageReflection#reflectsToSelf}
  * （诅咒类）时为<b>穿戴者自己</b>（无论伤害来源是谁）；否则为本次伤害来源实体
@@ -33,9 +40,8 @@ import net.minecraftforge.event.entity.living.LivingEvent;
  *   <li>{@link #setCanceled(boolean)}：取消后本次不施加反伤。</li>
  * </ul>
  *
- * <p><b>防循环保证</b>：反伤伤害本身是 {@code thorns} 类型，而 {@code hurtArmor}
- * 对 {@code thorns} 来源不累积反伤（见 {@code InventoryMixin}），故反伤链路不会
- * 再次触发本事件，监听者无需自行防环。
+ * <p><b>防循环保证</b>：反伤伤害本身是 {@code thorns} 类型，而 {@link ArmorHurtHandler#apply}
+ * 对 {@code thorns} 来源不累积反伤，故反伤链路不会再次触发本事件，监听者无需自行防环。
  *
  * <p><b>反伤伤害归因</b>：无论目标被改写为谁，施加的 {@code DamageSource}
  * 恒为 {@code thorns(穿戴者)}（{@code getEntity()} 返回穿戴者）—— 伤害归因于
@@ -45,7 +51,7 @@ import net.minecraftforge.event.entity.living.LivingEvent;
  *
  * @author THEREDK
  */
-public class ArmorReflectEvent extends LivingEvent {
+public class ArmorReflectEvent extends LivingEvent implements ICancellableEvent {
 
     /** 本次造成护甲损耗（并触发反伤）的伤害来源。 */
     private final DamageSource source;
@@ -80,12 +86,6 @@ public class ArmorReflectEvent extends LivingEvent {
         this.reflectToSelf = reflectToSelf;
         this.amount = amount;
         this.target = target;
-    }
-
-    /** 本事件可取消：取消后本次不施加反伤。 */
-    @Override
-    public boolean isCancelable() {
-        return true;
     }
 
     /** @return 本次造成护甲损耗（并触发反伤）的伤害来源 */
