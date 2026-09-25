@@ -21,5 +21,10 @@ jobs:
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
 
+      # 本仓库主要在 Windows 上开发，文件的 executable 位在打包/复制过程中容易丢失，
+      # 届时 CI 会以 "Permission denied" 直接失败。此处显式赋权，使构建不依赖该权限位。
+      - name: Make gradlew executable
+        run: chmod +x ./gradlew
+
       - name: Build with Gradle
         run: ./gradlew build
