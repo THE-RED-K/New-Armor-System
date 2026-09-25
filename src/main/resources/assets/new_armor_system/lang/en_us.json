@@ -1,8 +1,0 @@
-{
-  "tooltip.new_armor_system.broken": "Broken",
-  "tooltip.new_armor_system.mass": "+%s Mass",
-  "tooltip.new_armor_system.load_ratio": "Current load ratio: %s",
-  "tooltip.new_armor_system.load_ratio_preview": "Load ratio: %s",
-  "tooltip.new_armor_system.speed_penalty": "Speed penalty: %s",
-  "tooltip.new_armor_system.knockback_resistance": "Knockback resistance: %s"
-}
