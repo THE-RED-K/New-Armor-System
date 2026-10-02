@@ -296,8 +296,9 @@ public abstract class ItemStackMixin {
      * 无需 F3+H）；开启 F3+H（高级提示）再追加该物品<b>单独提供</b>的预览三项：
      * 负重比例（深灰）、移速减益（红色）、击退抗性（蓝色，整数显示）。
      *
-     * <p>插入位置按三级锚点依次尝试：attributeslib/Apotheosis 属性区块 →
-     * 原版属性行（韧性优先，其次护甲值）→ 追加到列表末尾。
+     * <p>插入位置按四级锚点依次尝试：attributeslib/Apotheosis 属性区块 →
+     * 原版属性行（韧性优先，其次护甲值）→ 注册名行之前（F3+H 的
+     * {@code minecraft:xxx}）→ 追加到列表末尾。
      *
      * @author THEREDK
      * @reason 质量系统可视化，排版与原版护甲属性保持一致
@@ -367,7 +368,14 @@ public abstract class ItemStackMixin {
             lines.addAll(vanillaAttrLine + 1, extra);
             return;
         }
-        // 锚点 3：找不到任何属性行（如自定义护甲无护甲属性）→ 追加到列表末尾
+        // 锚点 3：注册名行（F3+H 的 minecraft:xxx）之前 —— 与 addBrokenTooltip 同款兜底：
+        // 找不到属性行时（饰品、无属性自定义护甲等）质量行也不应掉到注册名行下方
+        int registryLine = newArmorSystem$findRegistryNameLine(lines);
+        if (registryLine >= 0) {
+            lines.addAll(registryLine, extra);
+            return;
+        }
+        // 锚点 4：都没有（未开 F3+H 且无属性行）→ 追加到列表末尾
         lines.addAll(extra);
     }
 

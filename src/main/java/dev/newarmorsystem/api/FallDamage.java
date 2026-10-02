@@ -27,6 +27,12 @@ import net.neoforged.neoforge.common.NeoForge;
  *   <li><b>倍率</b>：原版 {@code calculateFallDamage} 的 damageMultiplier 参数
  *       （原版 {@code Block.fallOn} 恒传 1.0；模组可通过
  *       {@code LivingFallEvent.setDamageMultiplier} 修改），纳入公式以保持兼容。</li>
+ *   <li><b>属性倍率</b>：1.21 的原版表达式里含 {@link Attributes#FALL_DAMAGE_MULTIPLIER}
+ *       （以及 {@link Attributes#SAFE_FALL_DISTANCE}），而本模组用 {@code @ModifyArg} 把该表达式
+ *       整体替换成自己的公式值，属性随之被丢弃 —— 故公式<b>显式读回</b>该属性，
+ *       与原版语义一致（0 = 免疫、1 = 原样、2 = 双倍）。
+ *       1.20.1 没有这个原版属性，由该分支自行注册等价属性（{@code ModAttributes}）并在同一处相乘，
+ *       两版对整合包的语义因此一致。</li>
  *   <li><b>分母</b>：默认 1920（0 ~ 100000）。1920 = 60 × 32，即"原版最大生命值环境的
  *       玩家质量 60 × g 32"；非法值（≤ 0）回退 1920，避免除零。</li>
  * </ul>
@@ -131,7 +137,13 @@ public final class FallDamage {
         double damage = 0.0;
         if (height > safeHeight) {
             double g = gravity * GRAVITY_BLOCKS_TO_MPS2;
-            damage = quantizeDamage(mass * g * (height - safeHeight) / denominator * multiplier);
+            // 摔落伤害倍率属性：1.21 的原版表达式里含 Attributes.FALL_DAMAGE_MULTIPLIER，
+            // 但本模组用 @ModifyArg 把该表达式整体替换成自己的公式值（属性随之被丢弃），
+            // 故此处显式读回，保持原版语义（0 = 免疫、1 = 原样、2 = 双倍）。
+            // 1.20.1 没有这个原版属性，由该分支注册等价属性（ModAttributes）后在同一处相乘。
+            double fallDamageMultiplier = player.getAttributeValue(Attributes.FALL_DAMAGE_MULTIPLIER);
+            damage = quantizeDamage(mass * g * (height - safeHeight) / denominator * multiplier
+                    * fallDamageMultiplier);
         }
         // 注意：height ≤ safeHeight 时 damage 恒为 0，但 mass / safeHeight 仍照常算出并随事件携带
         return new Computed(damage, mass, safeHeight);
