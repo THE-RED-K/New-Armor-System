@@ -1,5 +1,6 @@
 package dev.newarmorsystem.api;
 
+import dev.newarmorsystem.compat.PortLibCompat;
 import net.minecraft.world.effect.MobEffectInstance;
 import net.minecraft.world.effect.MobEffects;
 import net.minecraft.world.entity.player.Player;
@@ -16,8 +17,10 @@ import net.minecraftforge.common.MinecraftForge;
  *       该值同时由 {@link PlayerMassEffects} 同步到玩家
  *       {@code ForgeMod.ENTITY_GRAVITY} 属性，原版重力效果随之变动。</li>
  *   <li><b>h</b>：下落高度（格），原版 fallDistance（已含 {@code LivingFallEvent} 的修改）。</li>
- *   <li><b>安全高度</b>：{@code -1}（<b>默认</b>）= <b>跟随原版</b> —— 1.20.1 没有安全高度属性
- *       （原版把它硬编码在 {@code calculateFallDamage} 里），故解析为原版硬编码的 3 格；
+ *   <li><b>安全高度</b>：{@code -1}（<b>默认</b>）= <b>跟随平台</b> —— 优先取 1.21 属性的
+ *       1.20.1 移植 {@code safe_fall_distance}（由 {@code portlib} 一类移植库注册，见
+ *       {@link dev.newarmorsystem.compat.PortLibCompat}；其默认值即原版 3 格，
+ *       气球/马蹄铁一类饰品的加成因此照旧生效），未装移植库时回退原版硬编码的 3 格；
  *       {@code >= 0} = 显式覆写为配置值（0 ~ 100），h ≤ 安全高度不产生伤害。
  *       与 1.21.1 的同一配置项<b>同语义</b>（那边 {@code -1} = 跟随原版属性
  *       {@code SAFE_FALL_DISTANCE}），故两侧配置文件可双向直接复用。
@@ -28,6 +31,15 @@ import net.minecraftforge.common.MinecraftForge;
  *   <li><b>倍率</b>：原版 {@code calculateFallDamage} 的 damageMultiplier 参数
  *       （原版 {@code Block.fallOn} 恒传 1.0；模组可通过
  *       {@code LivingFallEvent.setDamageMultiplier} 修改），纳入公式以保持兼容。</li>
+ *   <li><b>属性倍率</b>：<b>两份相乘</b> ——
+ *       ① 本模组自定义属性 {@code new_armor_system:fall_damage_multiplier}
+ *       （见 {@link ModAttributes}，默认 1.0，0 = 免疫摔落伤害）；
+ *       ② 1.21 属性的 1.20.1 移植 {@code fall_damage_multiplier}
+ *       （由 {@code portlib} 一类移植库注册，见 {@link dev.newarmorsystem.compat.PortLibCompat}，
+ *       默认 1.0；移植库<b>自己的 mixin 需禁用</b>，应用唯一由本模组完成）。
+ *       两者都是乘性、且 0 = 免疫（{@code 0 × x = 0}），任一来源归零都能免除摔落伤害。
+ *       于是"某双靴子减免摔落伤害"这类按玩家生效的调整照旧表达，
+ *       且它同时作用于整数闸门与 {@code hurt} 处的伤害，故倍率 0 时连摔落音效都不会播（同原版）。</li>
  *   <li><b>分母</b>：默认 1920（0 ~ 100000）。1920 = 60 × 32，即"原版最大生命值环境的
  *       玩家质量 60 × g 32"；非法值（≤ 0）回退 1920，避免除零。</li>
  * </ul>
@@ -149,7 +161,11 @@ public final class FallDamage {
         // >= 0 = 显式覆写。与 1.21.1 的同一配置项同语义（都 = 跟随平台原版），
         // 因此两侧配置文件可双向直接复用。
         int safeConfig = loaded ? Config.COMMON.fallSafeHeight.get() : SAFE_HEIGHT_FOLLOW;
-        double safeBase = safeConfig >= 0 ? safeConfig : SAFE_HEIGHT_DEFAULT;
+        // -1 = 跟随平台：优先移植库（portlib 等）注册的 1.21 属性 safe_fall_distance —— 其 mixin
+        // 被禁用后属性依然存在、其它模组写入的修饰符照旧保留，只是没人应用，正好由本模组补上；
+        // 未装移植库时回退原版硬编码 3 格。>= 0 = NAS 显式覆写优先（保持"覆写"语义）。
+        double safeBase = safeConfig >= 0 ? safeConfig
+                : PortLibCompat.safeFallDistance(player, SAFE_HEIGHT_DEFAULT);
         int denominator = loaded ? Config.COMMON.fallDamageDenominator.get() : DENOMINATOR_DEFAULT;
         double jumpGrowth = loaded ? Config.COMMON.fallJumpSafeGrowth.get() : JUMP_SAFE_GROWTH_DEFAULT;
         if (denominator <= 0) {
@@ -167,7 +183,14 @@ public final class FallDamage {
         double damage = 0.0;
         if (height > safeEffective) {
             double g = gravity * GRAVITY_BLOCKS_TO_MPS2;
-            damage = quantizeDamage(mass * g * (height - safeEffective) / denominator * multiplier);
+            // 属性倍率：两份相乘（各默认 1.0，0 = 免疫摔落伤害）——
+            // ① 本模组自定义属性；② 移植库（portlib 等）注册的 1.21 属性 fall_damage_multiplier。
+            // 移植库的 mixin 必须禁用（否则它的"应用"与本模组重复），应用唯一由本模组完成，
+            // 于是既不会"乘两次"也不会"被覆盖"；属性缺失时两边都返回 1.0，不影响结果。
+            double attributeMultiplier = ModAttributes.fallDamageMultiplier(player)
+                    * PortLibCompat.fallDamageMultiplier(player);
+            damage = quantizeDamage(
+                    mass * g * (height - safeEffective) / denominator * multiplier * attributeMultiplier);
         }
         // 注意：height ≤ safeEffective 时 damage 恒为 0，但 mass / safeEffective 仍照常算出并随事件携带
         return new Computed(damage, mass, safeEffective);

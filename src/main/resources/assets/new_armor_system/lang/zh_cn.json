@@ -1,4 +1,5 @@
 {
+  "attribute.new_armor_system.fall_damage_multiplier": "摔落伤害倍率",
   "tooltip.new_armor_system.broken": "损坏的",
   "tooltip.new_armor_system.mass": "+%s 质量",
   "tooltip.new_armor_system.load_ratio": "当前负重比例：%s",

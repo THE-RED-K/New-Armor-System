@@ -337,7 +337,11 @@ public abstract class ItemStackMixin {
      *       → 插在韧性行下一行；否则 "+X 护甲值"
      *       （{@link #newArmorSystem$findArmorAttributeLine}，铁/金等无韧性护甲）
      *       → 插在护甲值行下一行；</li>
-     *   <li>两者都找不到（含非护甲物品）→ 追加到列表末尾。</li>
+     *   <li><b>注册名行</b>（F3+H 的 {@code minecraft:xxx}，
+     *       {@link #newArmorSystem$findRegistryNameLine}）→ 插在它<b>之前</b>；
+     *       这是与 {@link #newArmorSystem$addBrokenTooltip} 同款的兜底：饰品、无属性的
+     *       自定义护甲等缺少属性行时，质量行也不该掉到注册名行下方（实测反馈的排版问题）；</li>
+     *   <li>都没有（未开 F3+H 且无属性行）→ 追加到列表末尾。</li>
      * </ol>
      *
      * <p>块内顺序与现状一致：{@code +X 质量} 行在前；持有者非空时显示
@@ -410,7 +414,14 @@ public abstract class ItemStackMixin {
             lines.addAll(vanillaAttrLine + 1, extra);
             return;
         }
-        // 锚点 3：找不到任何属性行（如自定义护甲无护甲属性）→ 追加到列表末尾
+        // 锚点 3：注册名行（F3+H 的 minecraft:xxx）之前 —— 与 addBrokenTooltip 同款兜底：
+        // 找不到属性行时（饰品、无属性自定义护甲等）质量行也不应掉到注册名行下方
+        int registryLine = newArmorSystem$findRegistryNameLine(lines);
+        if (registryLine >= 0) {
+            lines.addAll(registryLine, extra);
+            return;
+        }
+        // 锚点 4：都没有（未开 F3+H 且无属性行）→ 追加到列表末尾
         lines.addAll(extra);
     }
 

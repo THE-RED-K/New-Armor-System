@@ -1,4 +1,5 @@
 {
+  "attribute.new_armor_system.fall_damage_multiplier": "Fall Damage Multiplier",
   "tooltip.new_armor_system.broken": "Broken",
   "tooltip.new_armor_system.mass": "+%s Mass",
   "tooltip.new_armor_system.load_ratio": "Current load ratio: %s",

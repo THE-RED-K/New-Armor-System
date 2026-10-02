@@ -12,6 +12,7 @@ import dev.newarmorsystem.api.CompatRegistration;
 import dev.newarmorsystem.api.Config;
 import dev.newarmorsystem.api.ItemMassConfig;
 import dev.newarmorsystem.api.MaterialMassConfig;
+import dev.newarmorsystem.api.ModAttributes;
 import dev.newarmorsystem.api.PlayerMassEffects;
 import dev.newarmorsystem.api.TrimMass;
 import dev.newarmorsystem.compat.CompatModules;
@@ -32,6 +33,11 @@ public class NewArmorSystem
         //end region
 
         ModLoadingContext.get().registerConfig(ModConfig.Type.COMMON, Config.COMMON_SPEC);
+
+        // 自定义属性（摔落伤害倍率 fall_damage_multiplier，与 NeoForge 1.21.1 同名属性同语义）：
+        // 注册表 + 挂到玩家实体类型；随后由 FallDamage 的公式读取
+        ModAttributes.ATTRIBUTES.register(modEventBus);
+        modEventBus.addListener(ModAttributes::onEntityAttributeModification);
 
         // 配置重载：重建质量系统的配置层（item_mass.entries 的修改即时生效，含删条目恢复原登记；
         // 事件对所有模组的配置都会派发，故需比对 spec 过滤）
