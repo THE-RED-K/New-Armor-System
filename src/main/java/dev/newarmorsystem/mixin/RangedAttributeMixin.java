@@ -19,11 +19,13 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
  * 天然成立 —— 负抗性 = 击退更远（-1.0 时击退强度 ×2）。属性范围不放开的话，
  * 附属模组添加的负修饰符会被 {@link RangedAttribute#sanitizeValue} clamp 成 0，效果无法生效。
  *
- * <p><b>1.20.1 → 1.21.1 的接管点迁移（必须改）</b>：1.20.1 的 {@code sanitizeValue} 调用的是
- * {@code getMinValue()}，故模组只需覆写 {@code getMinValue} 的返回值；1.21.1 的
- * {@code sanitizeValue} <b>直接读私有字段 {@code minValue}</b>：
+ * <p><b>接管点：{@link RangedAttribute#sanitizeValue}（两版已一致）</b>：属性值 clamp 的唯一入口
+ * 是 {@code AttributeInstance#calculateValue()} 的收尾
+ * {@code return this.attribute.sanitizeValue(d1);}（{@code setBaseValue} 不做净化），
+ * 而两版的 {@code sanitizeValue} 都<b>直接读私有字段 {@code minValue}</b>：
  * <pre>{@code return Double.isNaN(value) ? this.minValue : Mth.clamp(value, this.minValue, this.maxValue);}</pre>
- * 覆写 {@code getMinValue()} 已完全无效，故接管点迁移到 {@link RangedAttribute#sanitizeValue} 的 HEAD。
+ * 因此覆写 {@code getMinValue()} 的返回值<b>无法改变 clamp</b>（它只是字段的读取器）——
+ * 1.20.1 侧曾按此实现，属无效挂载，现已订正为与本版同构。
  *
  * <p><b>为何不是 {@code @Overwrite}</b>：仅对目标属性改写，其余属性按原参数返回、保持原版逻辑，
  * 与其它模组在 {@code sanitizeValue} 上的注入共存。

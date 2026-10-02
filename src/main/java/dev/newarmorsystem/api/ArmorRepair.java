@@ -4,7 +4,7 @@ import net.minecraft.world.item.ArmorItem;
 import net.minecraft.world.item.ArmorMaterial;
 import net.minecraft.world.item.ItemStack;
 
-import javax.annotation.Nullable;
+import org.jetbrains.annotations.Nullable;
 import java.util.IdentityHashMap;
 import java.util.Map;
 
@@ -38,6 +38,9 @@ public final class ArmorRepair {
      * @return 修复量（≥1）；非护甲或无法确定基数的护甲返回 -1，调用方应回退原版 {@code maxDamage/4}
      */
     public static int getRepairPerMaterial(ItemStack stack) {
+        if (Config.COMMON_SPEC.isLoaded() && !Config.COMMON.repairAmountFormulaEnabled.get()) {
+            return -1; // 功能总开关关闭：走原版 maxDamage/4
+        }
         if (!(stack.getItem() instanceof ArmorItem armor)) {
             return -1; // 非护甲：走原版 maxDamage/4
         }

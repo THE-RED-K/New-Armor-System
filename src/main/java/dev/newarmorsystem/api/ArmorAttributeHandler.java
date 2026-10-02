@@ -46,6 +46,14 @@ import java.util.List;
  *
  * <p>broken 物品不参与改写：由 {@code ItemStackMixin} 统一清空全部修饰符。
  *
+ * <p><b>与 1.20.1 的作用域差异（注意）</b>：1.20.1 的注入点在
+ * {@code ItemStack#getAttributeModifiers(EquipmentSlot)} 的 RETURN，改写范围限于
+ * <b>被查询的那一个槽位</b>的 map；本版事件拿到的是<b>无槽位参数</b>的完整修饰符表
+ * （条目自带 {@link EquipmentSlotGroup}），故 {@code removeAllModifiersFor} 会移除
+ * <b>全部槽位组</b>的 ARMOR / ARMOR_TOUGHNESS 条目，再按 {@code plan} 逐槽位重建。
+ * 对「同一物品在多个槽位组都提供护甲属性」的非原版物品，未被 {@code plan} 覆盖的
+ * 槽位条目会一并被移除；需要保留时请对该槽位做强制登记，使其进入 {@code plan}。
+ *
  * @author THEREDK
  * @reason 护甲值/盔甲韧性全局覆写（附属模组 API 的注入端）
  */
@@ -63,6 +71,10 @@ public final class ArmorAttributeHandler {
      */
     @SubscribeEvent
     public static void onItemAttributeModifier(ItemAttributeModifierEvent event) {
+        // 功能总开关关闭：保持原版护甲值与韧性
+        if (Config.COMMON_SPEC.isLoaded() && !Config.COMMON.armorAttributeOverrideEnabled.get()) {
+            return;
+        }
         ItemStack stack = event.getItemStack();
         if (BrokenState.isBroken(stack)) {
             return;  // broken 物品由 ItemStackMixin 统一清空修饰符

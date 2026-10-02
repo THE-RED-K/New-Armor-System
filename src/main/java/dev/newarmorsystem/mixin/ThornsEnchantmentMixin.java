@@ -1,6 +1,6 @@
 package dev.newarmorsystem.mixin;
 
-import dev.newarmorsystem.api.MixinPriorities;
+import dev.newarmorsystem.api.DamageReflection;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.damagesource.DamageSource;
@@ -33,10 +33,14 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
  * （见 {@code ArmorHurtHandler#apply}），反伤比例 = 材料反伤比例 + 荆棘等级 × 60%，
  * <b>必定反伤</b>（无概率判定）。
  *
+ * <p><b>功能总开关</b>：{@code feature_toggles.damageReflectionEnabled} 关闭时
+ * <b>不取消</b>原版荆棘 —— 由 {@link DamageReflection#isEnabled()} 判定，实现「关闭即完全原版」。
+ *
  * <p><b>为何不用 {@code @Overwrite}</b>：目标方法是<b>所有附魔共用</b>的通用入口
  * （每次攻击结算都会走），覆写需完整复刻其遍历体，风险与维护成本都高；
  * 改用 {@code @Inject} + {@code ci.cancel()} 只在命中荆棘时提前返回，
- * 其余附魔的原版行为分毫不动。
+ * 其余附魔的原版行为分毫不动。也正因如此<b>不使用</b> {@code MixinPriorities.TAKEOVER}
+ * （该常量专供整体接管方法体的 {@code @Overwrite}），保持默认优先级。
  *
  * <p><b>为何按注册表键判定而非身份比较</b>：NeoForge 会把原版附魔<b>以代码构建</b>并注册进
  * 内置注册表（见 {@code Enchantments} 的静态构建），而运行期使用的是数据包加载出来的
@@ -45,14 +49,13 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
  * 数据包重载后依然成立，不会有缓存失效问题。
  *
  * @author THEREDK
- * @reason 原版荆棘概率反伤与额外耐久损耗并入模组反伤系统
+ * @reason 原版荆棘概率反伤与额外耐久损耗并入模组反伤系统（开关关闭时保持原版）
  */
-// 接管型 mixin：低优先级先写入方法体，使其它模组的注入仍能落在接管后的方法上（机制与取值见 MixinPriorities）
-@Mixin(value = Enchantment.class, priority = MixinPriorities.TAKEOVER)
+@Mixin(Enchantment.class)
 public abstract class ThornsEnchantmentMixin {
 
     /**
-     * 命中 {@code minecraft:thorns} 时整体取消其 {@code POST_ATTACK} 效果
+     * 命中 {@code minecraft:thorns} 且反伤系统开启时，整体取消其 {@code POST_ATTACK} 效果
      * （概率反伤 + 额外耐久损耗），其余附魔原样放行。
      */
     @Inject(
@@ -63,6 +66,9 @@ public abstract class ThornsEnchantmentMixin {
     private void newArmorSystem$disableVanillaThorns(ServerLevel level, int enchantmentLevel, EnchantedItemInUse item,
                                                      EnchantmentTarget target, Entity entity, DamageSource damageSource,
                                                      CallbackInfo ci) {
+        if (!DamageReflection.isEnabled()) {
+            return; // 功能总开关关闭：原版荆棘完整保留
+        }
         if (level.registryAccess()
                 .registryOrThrow(Registries.ENCHANTMENT)
                 .getResourceKey((Enchantment) (Object) this)

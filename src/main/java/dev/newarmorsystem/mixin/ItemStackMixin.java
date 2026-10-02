@@ -38,7 +38,7 @@ import org.spongepowered.asm.mixin.injection.Redirect;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
-import javax.annotation.Nullable;
+import org.jetbrains.annotations.Nullable;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
@@ -88,6 +88,9 @@ public abstract class ItemStackMixin {
             return;  // 配置关闭：保留原版销毁行为
         }
         ItemStack self = (ItemStack) (Object) this;
+        if (BrokenState.isExempt(self)) {
+            return;  // 配置声明为「不进入损坏状态」：按原版爆掉消失（不派发事件）
+        }
         if (BrokenState.isBroken(self)) {
             // 归一累积的 over-damage（damage > maxDamage → 回落封顶）。传值 == maxDamage，
             // 不满足 clearBrokenOnRepair 的 newDamage < maxDamage，不会误清标记。
@@ -197,7 +200,11 @@ public abstract class ItemStackMixin {
                     target = "Lnet/minecraft/world/item/component/ItemAttributeModifiers;forEach(Lnet/minecraft/world/entity/EquipmentSlot;Ljava/util/function/BiConsumer;)V"))
     private void newArmorSystem$stripArmorKnockbackResistance(ItemAttributeModifiers instance, EquipmentSlot slot,
                                                               BiConsumer<Holder<Attribute>, AttributeModifier> action) {
-        if (((ItemStack) (Object) this).getItem() instanceof ArmorItem) {
+        // 仅在本模组确实供给击退抗性时才剔除护甲自带的抗性；
+        // 质量系统 / 击退抗性开关关闭时保持原样，让原版抗性回归
+        // （见 PlayerMass#suppliesKnockbackResistance —— 与 PlayerMassEffects 的供给条件同源）
+        if (PlayerMass.suppliesKnockbackResistance()
+                && ((ItemStack) (Object) this).getItem() instanceof ArmorItem) {
             instance.forEach(slot, (attribute, modifier) -> {
                 if (attribute.value() != Attributes.KNOCKBACK_RESISTANCE.value()) {
                     action.accept(attribute, modifier);
@@ -281,7 +288,7 @@ public abstract class ItemStackMixin {
     /**
      * 物品 tooltip 显示质量与质量系统派生效果。
      *
-     * <p>门槛为<b>物品本身有质量</b>（{@code PlayerMass.getItemMass > 0}）：
+     * <p>门槛为<b>物品本身有质量</b>（{@code PlayerMass.getItemMassExact > 0}）：
      * 护甲（材料公式）与注册了自定义质量的非护甲物品（{@code PlayerMass.registerItemMass}）
      * 均显示 {@code +X 质量}；broken 物品与未注册质量的普通物品不显示。
      *
@@ -298,19 +305,35 @@ public abstract class ItemStackMixin {
     @Inject(method = "getTooltipLines", at = @At("RETURN"))
     private void newArmorSystem$addMassTooltip(Item.TooltipContext context, @Nullable Player player,
                                                TooltipFlag flag, CallbackInfoReturnable<List<Component>> cir) {
+        if (Config.COMMON_SPEC.isLoaded() && !Config.COMMON.massTooltipEnabled.get()) {
+            return; // 功能总开关关闭：tooltip 不显示任何质量信息
+        }
         List<Component> lines = cir.getReturnValue();
-        int mass = PlayerMass.getItemMass((ItemStack) (Object) this);
-        if (mass <= 0) {
+        double mass = PlayerMass.getItemMassExact((ItemStack) (Object) this);
+        if (mass <= 0.0) {
             return;
         }
         List<Component> extra = new ArrayList<>(5);
-        extra.add(Component.translatable("tooltip.new_armor_system.mass", mass).withStyle(ChatFormatting.BLUE));
+        // 质量显示文本：整数不带小数（3），半格显示一位小数（3.5）
+        String massText = mass % 1.0 == 0.0
+                ? String.valueOf((int) mass)
+                : String.format(Locale.ROOT, "%.1f", mass);
+        extra.add(Component.translatable("tooltip.new_armor_system.mass", massText).withStyle(ChatFormatting.BLUE));
         if (player != null) {
             // 当前负重比例：灰色，始终显示（无需 F3+H）
             double ratio = PlayerMass.getLoadRatio(player);
             String percent = String.format(Locale.ROOT, "%.1f%%", ratio * 100);
             extra.add(Component.translatable("tooltip.new_armor_system.load_ratio", percent)
                     .withStyle(ChatFormatting.GRAY));
+            // 超重警示：红色加粗，与负重比例同行位置、无需 F3+H。
+            // 仅在"超重归零"生效时提示 —— 否则超重不影响移速，提示会误导；
+            // 阈值随配置显示（player_mass.overloadFactor），避免玩家以为是固定 100%。
+            if ((!Config.COMMON_SPEC.isLoaded() || Config.COMMON.overloadZeroEnabled.get())
+                    && PlayerMass.isOverloaded(player)) {
+                String limit = String.format(Locale.ROOT, "%.1f%%", PlayerMass.getOverloadFactor() * 100);
+                extra.add(Component.translatable("tooltip.new_armor_system.overload", limit)
+                        .withStyle(ChatFormatting.RED, ChatFormatting.BOLD));
+            }
             if (flag.isAdvanced()) {
                 // 负重比例（预览）：深灰；该物品单独提供的负重比例（物品质量 / 最大负重，不含当前穿戴）
                 String previewPercent = String.format(Locale.ROOT, "+%.1f%%",

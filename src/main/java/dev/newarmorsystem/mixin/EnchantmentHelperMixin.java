@@ -86,6 +86,10 @@ public abstract class EnchantmentHelperMixin {
         if (damage <= 0) {
             return;  // 与原实现一致：非正损耗无事发生
         }
+        // 功能总开关关闭：护甲/盾牌同样走原版概率性减免
+        if (Config.COMMON_SPEC.isLoaded() && !Config.COMMON.unbreakingRedefinitionEnabled.get()) {
+            return;
+        }
         if (!(stack.getItem() instanceof ArmorItem) && !(stack.getItem() instanceof ShieldItem)) {
             return;  // 其它物品保留原版概率性减免
         }

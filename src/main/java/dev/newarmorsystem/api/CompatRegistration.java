@@ -22,7 +22,7 @@ import org.jetbrains.annotations.Nullable;
  *     myArmorMaterial,            // 第三方护甲材料（1.21：getMaterial().value() 取到的注册表实例）
  *     ArmorClass.MEDIUM,          // 护甲类型（null = 不登记，保持默认：内置走内置规则，自定义默认中甲）
  *     32.0,                       // 耐久基数（>0 登记；≤0 不登记，走内置/反推）
- *     1.2,                        // 材料质量系数（>0 登记；≤0 不登记，默认 1.0）
+ *     1.2,                        // 材料质量系数（≥0 登记，0 = 零质量；负数不登记，默认 1.0）
  *     1.5,                        // 铁砧修理花费系数（>0 登记；≤0 不登记，用全局配置）
  *     1.0,                        // 工具修正系数（>0 登记；≤0 不登记，默认 1.0）
  *     mySword, myPickaxe, ...);   // 绑定的具体工具物品（可为空数组）
@@ -81,8 +81,8 @@ public final class CompatRegistration {
      * @param material                护甲材料（{@code ArmorMaterials.LEATHER.value()} 等注册表实例或自定义材料）
      * @param armorClass              护甲类型（{@code null} = 不登记，保持默认）
      * @param durabilityBase          耐久基数（> 0 登记；≤ 0 不登记，走内置/反推）
-     * @param materialMassCoefficient 材料质量系数（> 0 登记；≤ 0 不登记，默认 1.0）
-     * @param repairCostCoefficient   铁砧修理花费系数（> 0 登记；≤ 0 不登记，用全局配置；局部免费见上方说明）
+     * @param materialMassCoefficient 材料质量系数（≥ 0 登记，<b>0 = 零质量</b>；&lt; 0 不登记，默认 1.0）
+     * @param repairCostCoefficient   铁砧修理花费系数（≥ 0 登记，<b>0 = 免费</b>；&lt; 0 不登记，用全局配置）
      * @param toolCoefficient         工具修正系数（> 0 登记；≤ 0 不登记，默认 1.0）
      * @param toolItems               绑定到该材料的具体工具物品（可为空数组）
      */
@@ -101,10 +101,10 @@ public final class CompatRegistration {
         if (durabilityBase > 0) {
             ArmorMaterialRules.registerDurabilityBase(material, durabilityBase);
         }
-        if (materialMassCoefficient > 0) {
+        if (materialMassCoefficient >= 0) {
             PlayerMass.registerMaterialMassCoefficient(material, materialMassCoefficient);
         }
-        if (repairCostCoefficient > 0) {
+        if (repairCostCoefficient >= 0) {
             ArmorRepair.registerRepairCostCoefficient(material, repairCostCoefficient);
         }
         if (toolItems != null) {

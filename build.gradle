@@ -28,6 +28,12 @@ sourceSets.main.resources {
 
 repositories {
     // Add here additional repositories if required by some of the dependencies below.
+
+    // Curios（软依赖）：官方 maven，用于 compileOnly 编译期联动饰品槽
+    maven {
+        name = 'Curios'
+        url = uri('https://maven.theillusivec4.top/')
+    }
 }
 
 base {
@@ -137,6 +143,10 @@ dependencies {
     // For more info:
     // http://www.gradle.org/docs/current/userguide/artifact_dependencies_tutorial.html
     // http://www.gradle.org/docs/current/userguide/dependency_management.html
+
+    // Curios（软依赖）：compileOnly 仅编译期联动，不打包进 jar；
+    // 运行时由 ModList.isLoaded("curios") 保护，未安装 Curios 也能正常运行
+    compileOnly "top.theillusivec4.curios:curios-neoforge:${curios_version}"
 }
 
 // This block of code expands all declared replace properties in the specified resource targets.
@@ -181,6 +191,16 @@ publishing {
 
 tasks.withType(JavaCompile).configureEach {
     options.encoding = 'UTF-8' // Use the UTF-8 charset for Java compilation
+}
+
+// Javadoc 编码：与源码保持一致（源码为 UTF-8）。缺此配置时，若运行环境把
+// native.encoding 设为 GBK（中文 Windows），javadoc 会按 GBK 读取源码并失败。
+tasks.withType(Javadoc).configureEach {
+    options.encoding = 'UTF-8'
+    // Mixin 约定：@Overwrite 方法的 javadoc 必须带 @reason（Mixin AP 会校验并告警
+    // "@Overwrite is missing an @reason tag"），但它不是标准 javadoc 标签，默认会被
+    // 报"未知标记"而让文档任务失败。在此声明为自定义标签 —— 两边约定同时满足。
+    options.addStringOption('tag', 'reason:a:Reason:')
 }
 
 // IDEA no longer automatically downloads sources/javadoc jars for dependencies, so we need to explicitly enable the behavior.

@@ -117,7 +117,8 @@ public final class ArmorHurtHandler {
             }
             ItemStack stack = armorEntry.armorItemStack;
             if (stack.getItem() instanceof ArmorItem armorItem) {
-                if (!isReflectionDamage) {
+                // 功能总开关：反伤系统关闭时不累积、也不施加任何反伤
+                if (!isReflectionDamage && DamageReflection.isEnabled()) {
                     ArmorMaterial material = armorItem.getMaterial().value();
                     if (DamageReflection.reflectsToSelf(material)) {
                         reflectToSelf = true;

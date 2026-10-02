@@ -45,6 +45,9 @@ public final class ArmorDurability {
      * @param event 默认组件修改事件
      */
     public static void onModifyDefaultComponents(ModifyDefaultComponentsEvent event) {
+        if (Config.COMMON_SPEC.isLoaded() && !Config.COMMON.armorDurabilitySystemEnabled.get()) {
+            return; // 功能总开关关闭：不写入 MAX_DAMAGE，所有护甲保持原版耐久
+        }
         // 先取快照：事件回调会向内部映射写入，避免边遍历边修改
         List<Item> items = event.getAllItems().toList();
         for (Item item : items) {
@@ -62,9 +65,9 @@ public final class ArmorDurability {
                 continue;                       // 兜底：无法确定基数时保持原版
             }
             ArmorClass clazz = ArmorClass.of(material);
-            // 舍入与 1.20.1 保持一致：内置材料路径为「截断」而非四舍五入
-            // （1.20.1 的 ArmorMaterialsMixin 为 (int) 强转，ArmorItemMixin 才是 round；
-            //  此处统一按截断，避免金护甲等非整数结果产生 1 点耐久差异：10×13×0.75 = 97.5 → 97）。
+            // 取整为【截断】而非四舍五入，与 1.20.1 的两条路径（ArmorMaterialsMixin 内置 /
+            // ArmorItemMixin 自定义，后者已由 round 订正为截断）完全一致 —— 避免金护甲等
+            // 非整数结果产生 1 点耐久差异：10×13×0.75 = 97.5 → 97（两版同值）。
             // Math.max(1, ...) 仅为下限保护，在当前取值域（最小 8×12×0.75 = 72）下不会触发。
             int newMaxDamage = Math.max(1,
                     (int) (ArmorMaterialRules.slotFactor(type) * base * clazz.ArmorTypeCoefficient()));

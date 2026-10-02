@@ -9,19 +9,28 @@ import net.neoforged.neoforge.event.entity.player.PlayerEvent;
  * <p>本事件由 {@link FallDamage#computeDamage} 在公式
  * {@code D = (玩家质量 + 护甲质量) × g × (h − 安全高度) / 分母 × 倍率}
  * 结算完成之后派发，结算函数的返回值取 {@link #getDamage()}。
- * 没有被监听时行为与不派发完全一致（返回公式结果的向上取整值）。
+ * 没有被监听时行为与不派发完全一致（返回公式结果的<b>半格取整值</b>）。
+ *
+ * <p><b>伤害是 double</b>：MC 的伤害管线以 {@code float} 结算，故本事件保留公式的
+ * <b>半格</b>精度（如 3.5），不再像早期版本那样整形为 int —— 这样"总质量"半格化
+ * 带来的精度才不会在摔落伤害的出口处被抹掉。
  *
  * <p><b>与 NeoForge 原生 {@code LivingFallEvent} 的关系</b>：{@code LivingFallEvent}
  * 在公式<b>之前</b>触发，只能改下落距离与伤害倍率（两者均已进入本公式）；
  * 本事件在公式<b>之后</b>触发，改的是公式结果。顺序：
- * {@code LivingFallEvent} → 本事件 → 原版后续逻辑（摔落音效、{@code hurt}）。
+ * {@code LivingFallEvent} → 原版摔落音效 → 本事件 → {@code hurt}。
  *
- * <p><b>不可取消</b>：「免除本次摔落伤害」用 {@link #setDamage(int)} 设 0 即可表达。
+ * <p><b>不可取消</b>：「免除本次摔落伤害」用 {@link #setDamage(double)} 设 0 即可表达
+ * —— 伤害为 0 时 {@code hurt} 不造成任何伤害。注意原版摔落音效在本事件<b>之前</b>播放
+ * （原版先播音效再结算伤害），因此设 0 不会撤销音效。
+ * 本事件不实现可取消接口：NeoForge 1.21 的 {@code PlayerEvent} 不再提供
+ * {@code isCancelable()}（可取消语义改由 {@code ICancellableEvent} 表达），
+ * 故这里也没有可覆写的取消方法（1.20.1 侧仍有 {@code isCancelable()} 覆写）。
  *
- * <p><b>派发范围</b>：安全高度以内（公式结果 0）同样派发 —— 监听者可以对
- * "本不该受伤的坠落"附加效果。仅服务端结算链路派发
- * （{@code LivingEntity#calculateFallDamage}，由 {@code LivingEntityFallDamageMixin}
- * 仅对玩家重定向；非玩家原样走原版公式，不派发本事件）。
+ * <p><b>派发范围</b>：仅服务端结算链路派发（{@code LivingEntity#causeFallDamage}，
+ * 由 {@code LivingEntityFallDamageMixin} 仅对玩家接管；非玩家原样走原版公式，不派发本事件）。
+ * 安全高度以内的坠落不会进入原版 {@code i > 0} 分支，故不派发本事件
+ * （与"越不过安全高度的坠落本就无事发生"一致）。
  *
  * @author THEREDK
  */
@@ -40,10 +49,10 @@ public class PlayerFallDamageEvent extends PlayerEvent {
     private final double safeHeight;
 
     /** 公式结算结果（未派发事件时的返回值）。 */
-    private final int originalDamage;
+    private final double originalDamage;
 
     /** 当前生效的摔落伤害（可写）。 */
-    private int damage;
+    private double damage;
 
     /**
      * @param player         承受摔落的玩家
@@ -54,7 +63,7 @@ public class PlayerFallDamageEvent extends PlayerEvent {
      * @param originalDamage 公式结算结果（{@code damage} 初值同此）
      */
     public PlayerFallDamageEvent(Player player, float height, float multiplier,
-                                 double mass, double safeHeight, int originalDamage) {
+                                 double mass, double safeHeight, double originalDamage) {
         super(player);
         this.height = height;
         this.multiplier = multiplier;
@@ -85,21 +94,21 @@ public class PlayerFallDamageEvent extends PlayerEvent {
     }
 
     /** @return 公式结算结果（未派发事件时的返回值） */
-    public int getOriginalDamage() {
+    public double getOriginalDamage() {
         return this.originalDamage;
     }
 
     /** @return 当前生效的摔落伤害（等于 {@link #getOriginalDamage()} 时说明未被改写） */
-    public int getDamage() {
+    public double getDamage() {
         return this.damage;
     }
 
     /**
      * 改写最终摔落伤害。
      *
-     * @param damage 新的摔落伤害（负数按 0 处理；0 = 本次不受伤）
+     * @param damage 新的摔落伤害（负数按 0 处理；0 = 本次不造成伤害）
      */
-    public void setDamage(int damage) {
-        this.damage = Math.max(0, damage);
+    public void setDamage(double damage) {
+        this.damage = Math.max(0.0, damage);
     }
 }

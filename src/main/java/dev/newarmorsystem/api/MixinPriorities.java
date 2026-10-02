@@ -14,18 +14,26 @@ package dev.newarmorsystem.api;
  *       其字节码等价于 {@code mergedPriority < myPriority} —— <b>注入方的优先级必须严格高于接管方</b>，
  *       否则在 PREINJECT 阶段抛出
  *       {@code InvalidInjectionException: ... cannot inject into ... merged by ... with priority ...}；
- *       由于 {@code injectors.defaultRequire = 1}，这会直接导致游戏启动崩溃。</li>
+ *       由于 {@code injectors.defaultRequire = 1}，这会直接导致游戏启动崩溃
+ *       （实例：EndingLibrary 2.2 的 {@code advanced.data_expand.component.InventoryMixin} 注入
+ *       {@code Inventory#hurtArmor} 内的 {@code ItemStack.hurtAndBreak} 调用 ——
+ *       该实例记录于 1.20.1 侧；1.21.1 侧本模组对应的接管点是
+ *       {@code LivingEntity#doHurtEquipment} 与 {@code ItemStack#hurtAndBreak}，
+ *       与其它模组争用同一调用点的风险同理）。</li>
  *   <li>反过来，{@code @Overwrite} 之间的冲突是"<b>先写入者胜出</b>"：后写入者被
  *       {@code Method overwrite conflict ... Skipping method} 跳过。因此低优先级同时保证
  *       本模组的接管不会被别的 {@code @Overwrite} 取代 —— 两头都稳。</li>
  * </ol>
  *
- * <p><b>取值 500 的理由</b>：Mixin 默认优先级是 1000，生态中绝大多数 mixin 配置都使用默认值。
+ * <p><b>取值 500 的理由</b>：Mixin 默认优先级是 1000，生态中绝大多数 mixin 配置都使用默认值
+ * （实测某大型整合包 793 个配置：792 个 1000、1 个 {@code Integer.MAX_VALUE}，无一低于 1000）。
  * 500 低于默认值，可保证这类模组的注入全部能落在本模组接管后的方法体上；又不取更极端的值，
  * 以免本模组的接管层与刻意"最先应用"的 mixin（{@code Integer.MIN_VALUE} 一类）互抢层次。
  *
  * <p><b>使用范围</b>：只用于"整体接管方法体"的 {@code @Overwrite} mixin
- * （{@code CombatRulesMixin}、{@code InventoryMixin}、{@code ItemStackMixin#hurt}、{@code ThornsEnchantmentMixin}）。
+ * （本版仅 {@code CombatRulesMixin} —— 1.20.1 侧的 {@code InventoryMixin} 与
+ * {@code ItemStackMixin#hurt} 在 1.21.1 已分别改为「组件式 / 事件式接管」与
+ * {@code EnchantmentHelper#processDurabilityChange} 注入，不再占用本常量）。
  * 只做注入 / 重定向的 mixin 一律保持默认优先级 1000 —— 若把它们也压到 500，本模组自己的注入会变成
  * "底层"，反而可能被其它模组后写入的 {@code @Overwrite} 冲掉。
  *

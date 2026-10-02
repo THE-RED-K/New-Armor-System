@@ -5,7 +5,7 @@ import net.minecraft.world.item.ArmorItem;
 import net.minecraft.world.item.ArmorMaterial;
 import net.minecraft.world.item.Item;
 
-import javax.annotation.Nullable;
+import org.jetbrains.annotations.Nullable;
 import java.util.EnumMap;
 import java.util.IdentityHashMap;
 import java.util.Map;
@@ -16,20 +16,43 @@ import java.util.Objects;
  *
  * <p>允许附属模组覆写<b>任意护甲</b>（原版或其它模组）的护甲值与盔甲韧性，
  * 包括各部位互不相同的值。覆写后物品在属性面板、玩家实际属性计算
- * （减伤公式等）与 tooltip 中显示/生效的均为新值。
+ * （减伤公式等）与 tooltip 中显示/生效的均为新值 —— 三者共用
+ * {@code ItemStack#getAttributeModifiers()} 同一数据源，故显示与效果天然一致
+ * （具体改写见 {@link ArmorAttributeHandler}）。
  *
  * <p>三种登记粒度，按物品登记优先：
  * <ul>
- *   <li><b>按物品</b>（{@link #register(Item, double, double)}）：精确到单件护甲；</li>
+ *   <li><b>按物品</b>（{@link #register(Item, double, double)}）：精确到单件护甲，
+ *       各部位互不影响（如只改铁头盔不改铁胸甲）。非 {@link ArmorItem} 的
+ *       自定义护甲物品也可登记，但需其自身已提供护甲属性条目（见下方"生效条件"）。</li>
  *   <li><b>按物品 × 槽位（强制）</b>（{@link #register(Item, EquipmentSlot, double, double)}）：
- *       无条件写入该槽位的护甲值/韧性，适用于非 {@link ArmorItem} 的自定义穿戴物；</li>
+ *       显式指定装备槽位后<b>无条件写入</b>护甲值/韧性 —— 即使该物品不是
+ *       {@link ArmorItem}、原本不提供任何护甲属性条目（如自定义穿戴物、饰品），
+ *       也会在该槽位获得护甲值/韧性；是最高的强制覆盖手段。</li>
  *   <li><b>按材料 × 部位</b>（{@link #register(ArmorMaterial, ArmorItem.Type, double, double)}）：
- *       同一材料按头盔/胸甲/护腿/靴子分别配值，自动应用到该材料下全部护甲物品。</li>
+ *       同一材料按头盔/胸甲/护腿/靴子分别配值，自动应用到该材料下全部护甲物品；
+ *       未登记的部位保持原版值。另有四部位统一登记的
+ *       {@link #registerMaterial(ArmorMaterial, double, double)}。</li>
  * </ul>
  *
- * <p>数值语义：{@code armor} 与 {@code toughness} 均允许 0（0 = 移除该项属性条目，
- * 两者都为 0 表示完全移除该护甲的护甲值/韧性条目）；负值非法，构造 {@link ArmorStats}
- * 时抛 {@link IllegalArgumentException}。
+ * <p>生效条件（与 1.21 的 {@code ItemAttributeModifiers} 数据组件行为一致）：
+ * <ul>
+ *   <li><b>强制登记</b>（物品 × 槽位）：无视下述条件，直接在该槽位写入/接管属性；</li>
+ *   <li>登记物品为 {@link ArmorItem} 时，仅在其<b>对应装备槽位</b>生效
+ *       （与原版护甲只在装备槽提供属性一致）；</li>
+ *   <li>登记物品非 {@link ArmorItem} 时，仅当该物品在目标槽位<b>原本就提供护甲值
+ *       或韧性条目</b>才改写（即组件中已含 ARMOR / ARMOR_TOUGHNESS 修饰符），
+ *       否则无法识别其护甲身份、不添加条目 —— 需要无条件添加请用强制登记。</li>
+ * </ul>
+ *
+ * <p>数值语义：
+ * <ul>
+ *   <li>{@code armor} 与 {@code toughness} 均允许 0：0 表示该护甲不再提供该项属性；
+ *       两者都为 0 表示完全移除该护甲的护甲值/韧性条目（不再显示 +X 属性行）。</li>
+ *   <li>负值非法，构造 {@link ArmorStats} 时抛 {@link IllegalArgumentException}；
+ *       取消登记请用 {@link #remove(Item)} / {@link #remove(ArmorMaterial, ArmorItem.Type)}
+ *       / {@link #removeMaterial(ArmorMaterial)}。</li>
+ * </ul>
  *
  * <p><b>1.20.1 → 1.21.1 适配</b>：
  * <ul>
@@ -43,13 +66,32 @@ import java.util.Objects;
  *       {@code ArmorMaterial} 注册表实例（调用方经 {@code armorItem.getMaterial().value()} 取得）。</li>
  * </ul>
  *
- * <p>登记表<b>非线程安全</b>，建议加载期（与 {@link DamageReflection#register} 同批）调用。
+ * <p>覆写即"接管"：登记后该物品在该槽位的 ARMOR / ARMOR_TOUGHNESS 条目被整体替换
+ * （保留原条目 UUID，未提供时回退原版标准 UUID），其它属性条目（如击退抗性、
+ * 模组自定义属性）不受影响。登记表<b>非线程安全</b>，建议加载期
+ * （与 {@link DamageReflection#register} 同批）调用。
  *
  * @author THEREDK
  */
 public final class ArmorAttributeRules {
 
     private ArmorAttributeRules() {
+    }
+
+    /**
+     * 护甲属性覆写功能总开关（{@code feature_toggles.armorAttributeOverrideEnabled}，默认开启）。
+     *
+     * <p>关闭时 {@link ArmorAttributeHandler} 不再改写任何护甲值 / 盔甲韧性（含强制登记），
+     * 完全回到原版。配置未加载时返回 {@code true}（与默认值一致）。
+     *
+     * <p><b>与 1.20.1 的差异（仅为注入端）</b>：1.20.1 由 {@code ArmorAttributeMixin}
+     * 读取本开关；1.21.1 的注入端是 {@link ArmorAttributeHandler}（原生事件），
+     * 方法签名与语义不变 —— 本方法是公开 API，为两侧一致而保留。
+     *
+     * @return 护甲属性覆写是否启用
+     */
+    public static boolean isEnabled() {
+        return !Config.COMMON_SPEC.isLoaded() || Config.COMMON.armorAttributeOverrideEnabled.get();
     }
 
     /**
