@@ -48,6 +48,9 @@ public abstract class ArmorMaterialsMixin {
      */
     @Inject(method = "<clinit>", at = @At("TAIL"))
     private static void newArmorSystem$applySlotFactors(CallbackInfo ci) {
+        if (Config.COMMON_SPEC.isLoaded() && !Config.COMMON.armorDurabilitySystemEnabled.get()) {
+            return; // 功能总开关关闭：部位系数也保持原版（否则「关闭」并非真正回到原版）
+        }
         int base = Config.COMMON_SPEC.isLoaded() ? Config.COMMON.slotFactorBase.get() : 8;
         HEALTH_FUNCTION_FOR_TYPE.put(ArmorItem.Type.HELMET, base + 5);
         HEALTH_FUNCTION_FOR_TYPE.put(ArmorItem.Type.CHESTPLATE, base + 8);
@@ -67,6 +70,9 @@ public abstract class ArmorMaterialsMixin {
      */
     @Inject(method = "getDurabilityForType", at = @At("RETURN"), cancellable = true)
     private void newArmorSystem$applyDurabilityBase(ArmorItem.Type type, CallbackInfoReturnable<Integer> cir) {
+        if (!Config.COMMON_SPEC.isLoaded() || !Config.COMMON.armorDurabilitySystemEnabled.get()) {
+            return; // 功能总开关关闭：保持原版护甲耐久
+        }
         ArmorMaterial material = (ArmorMaterial) (Object) this;
         ArmorClass clazz = ArmorClass.of(material);
         double base = ArmorMaterialRules.durabilityBase(material);

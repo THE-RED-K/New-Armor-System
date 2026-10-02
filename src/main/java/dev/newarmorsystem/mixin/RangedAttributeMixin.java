@@ -1,6 +1,7 @@
 package dev.newarmorsystem.mixin;
 
 import dev.newarmorsystem.api.Config;
+import net.minecraft.util.Mth;
 import net.minecraft.world.entity.ai.attributes.RangedAttribute;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Unique;
@@ -16,8 +17,26 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
  *
  * <p>击退抗性放宽到负数是为了给附属模组留接口：原版击退公式
  * （{@code LivingEntity.knockback} 中 {@code strength *= 1.0 - resistance}）对负数
- * 天然成立 —— 负抗性 = 击退更远（-1.0 时击退强度 ×2）。属性范围不放开的话，
- * 附属模组添加的负修饰符会被 {@code sanitizeValue} clamp 成 0，效果无法生效。
+ * 天然成立 —— 负抗性 = 击退更远（-1.0 时击退强度 ×2）。
+ *
+ * <p><b>为什么必须接管 {@code sanitizeValue}（而非 {@code getMinValue}）</b>：
+ * 属性值 clamp 的唯一入口是 {@code AttributeInstance#calculateValue()} 的收尾
+ * {@code return this.attribute.sanitizeValue(d1);}（{@code setBaseValue} 不做净化），
+ * 而 1.20.1 的 {@code RangedAttribute#sanitizeValue} <b>直接读私有字段 {@code minValue}</b>：
+ * <pre>{@code return Double.isNaN(value) ? this.minValue : Mth.clamp(value, this.minValue, this.maxValue);}</pre>
+ * 因此只覆写 {@code getMinValue()} 的返回值<b>完全无法改变 clamp</b> ——
+ * 附属模组添加的负修饰符依旧会被截断成 0，负韧性也会被抹平
+ * （{@code getMinValue()} 只是字段的读取器）。
+ *
+ * <p>本类与 1.21.1 侧<b>同构</b>：两版都只接管 {@code sanitizeValue} 的 HEAD。
+ *
+ * <p><b>为何不是 {@code @Overwrite}</b>：仅对目标属性改写，其余属性按原参数返回、
+ * 保持原版逻辑（含 NaN 分支），与其它模组在 {@code sanitizeValue} 上的注入共存。
+ *
+ * <p>构造器里只比较描述 ID、不读配置：{@code Attributes} 的静态初始化发生在 Bootstrap 阶段，
+ * 早于模组构造与配置加载，此时读 {@link Config} 会抛
+ * "Cannot get config value before config is loaded"。同理，
+ * {@code sanitizeValue} 内先检查配置是否已加载。
  */
 @Mixin(RangedAttribute.class)
 public abstract class RangedAttributeMixin {
@@ -35,17 +54,14 @@ public abstract class RangedAttributeMixin {
     private boolean newArmorSystem$isKnockbackResistance;
 
     /**
-     * 击退抗性"无下限"哨兵值：开启无下限开关时 {@link net.minecraft.world.entity.ai.attributes.RangedAttribute#getMinValue()} 返回该值，
-     * 任何有限修饰符值都不会被 {@code sanitizeValue} 的 clamp 截断。
+     * 击退抗性"无下限"哨兵值：开启无下限开关时作为最小值，
+     * 任何有限修饰符值都不会被 clamp 截断。
      */
     @Unique
     private static final double NEW_ARMOR_SYSTEM$NO_KNOCKBACK_LOWER_LIMIT = -Double.MAX_VALUE;
 
     /**
-     * 这里只比较构造器参数（dev 名），不读取配置。
-     * 为什么不能在此读配置：{@link net.minecraft.world.entity.ai.attributes.Attributes}
-     * 的静态初始化发生在客户端 Bootstrap 阶段，早于 mod 构造与 Forge 配置加载，
-     * 此时读 {@link Config} 会抛 "Cannot get config value before config is loaded"。
+     * 构造器标记：只比较描述 ID，不读配置（原因见类注释）。
      */
     @Unique
     @Inject(
@@ -67,28 +83,31 @@ public abstract class RangedAttributeMixin {
     /**
      * 使 armor_toughness / knockback_resistance 的最小允许值可配置（原版固定 0）。
      *
-     * <p>采用 {@code @Inject RETURN + cancellable}（而非 {@code @Overwrite}）：
-     * 仅对目标属性改写返回值，其余属性保持原 {@code minValue}，与其他模组在
-     * {@code getMinValue} 上的 {@code @Inject} 共存、不覆盖他人改写。
-     * 延迟到 {@code getMinValue()} 读取：该方法仅在游戏运行中（实体属性 clamp 校验）被调用，
+     * <p>在 HEAD 处接管并<b>复刻原版语义</b>，仅把下界换成配置值：
+     * 原版为 {@code Double.isNaN(value) ? minValue : clamp(value, minValue, maxValue)}，
+     * 本方法对目标属性返回 {@code clamp(value, newMin, maxValue)}，
+     * 其余属性直接放行、由原方法处理（含 NaN 分支）。
+     *
+     * <p>延迟到运行时读取配置：{@code sanitizeValue} 仅在属性值计算时被调用，
      * 彼时配置必然已加载；未加载时保持原值，任何极端时序下都不会崩溃。
      */
     @Unique
-    @Inject(method = "getMinValue", at = @At("RETURN"), cancellable = true, require = 1)
-    private void newArmorSystem$overrideMinValue(CallbackInfoReturnable<Double> cir) {
-        if (!Config.COMMON_SPEC.isLoaded()) {
-            return; // 配置未加载：保持原值
+    @Inject(method = "sanitizeValue", at = @At("HEAD"), cancellable = true, require = 1)
+    private void newArmorSystem$widenLowerBound(double value, CallbackInfoReturnable<Double> cir) {
+        if (Double.isNaN(value) || !Config.COMMON_SPEC.isLoaded()) {
+            return; // NaN 与原版一致交由原方法处理；配置未加载保持原值
         }
+        double newMin;
         if (this.newArmorSystem$isArmorToughness) {
-            cir.setReturnValue((double) Config.COMMON.armorToughnessMinAllowed.get());
+            newMin = Config.COMMON.armorToughnessMinAllowed.get();
         } else if (this.newArmorSystem$isKnockbackResistance) {
             // 无下限开关默认开启：返回哨兵值，负修饰符完全生效（击退更远）
-            if (Config.COMMON.knockbackResistanceNoLowerLimit.get()) {
-                cir.setReturnValue(NEW_ARMOR_SYSTEM$NO_KNOCKBACK_LOWER_LIMIT);
-            } else {
-                // 关闭后回退到下限数值配置（默认 -2.0）
-                cir.setReturnValue(Config.COMMON.knockbackResistanceMinAllowed.get());
-            }
+            newMin = Config.COMMON.knockbackResistanceNoLowerLimit.get()
+                    ? NEW_ARMOR_SYSTEM$NO_KNOCKBACK_LOWER_LIMIT
+                    : Config.COMMON.knockbackResistanceMinAllowed.get();
+        } else {
+            return; // 其余属性保持原版范围
         }
+        cir.setReturnValue(Mth.clamp(value, newMin, ((RangedAttribute) (Object) this).getMaxValue()));
     }
 }

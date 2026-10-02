@@ -120,7 +120,8 @@ public abstract class InventoryMixin {
                     ItemStack itemstack = armorEntry.armorItemStack;
                     if (itemstack.getItem() instanceof ArmorItem armorItem) {
                         // 反伤 = 反伤比例 × 护甲损失的耐久度（荆棘反伤不再反伤，防止无限循环）
-                        if (!isReflectionDamage) {
+                        // 功能总开关：反伤系统关闭时不累积、也不施加任何反伤
+                        if (!isReflectionDamage && DamageReflection.isEnabled()) {
                             if (DamageReflection.reflectsToSelf(armorItem.getMaterial())) {
                                 reflectToSelf = true;
                             }

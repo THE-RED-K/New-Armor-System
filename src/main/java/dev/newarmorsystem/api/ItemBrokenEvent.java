@@ -18,7 +18,11 @@ import net.minecraftforge.event.entity.living.LivingEvent;
  * 状态转换那一次 —— 事件对"耐久 ≥ maxDamage 且带标记"的物品不再触发。
  *
  * <p><b>适用范围</b>：一切经 {@code hurtAndBreak} 损耗耐久的可损坏物品
- * （护甲、盾牌、工具、武器等），不限护甲。
+ * （护甲、盾牌、工具、武器等），不限护甲。本版（1.20.1）该方法的实体参数没有
+ * {@code @Nullable}（原版方法体立即解引用它），故本事件<b>必然带实体</b>；
+ * 1.21.1 的 {@code hurtAndBreak(int, ServerLevel, LivingEntity, Consumer)} 允许
+ * {@code null} 实体，那边 {@code entity == null} 时仅静默转入 broken、不派发本事件
+ * （{@code LivingEvent} 需要实体）—— 这是两版在本事件上的唯一差异。
  *
  * <p><b>不可取消</b>：取消会破坏「broken ⇔ 耐久 ≥ maxDamage」的不变式
  * （{@code setDamageValue} 的清标记链路依赖它）。要<b>阻止</b>物品损坏，

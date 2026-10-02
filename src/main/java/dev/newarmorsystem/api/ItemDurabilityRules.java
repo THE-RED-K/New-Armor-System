@@ -3,7 +3,7 @@ package dev.newarmorsystem.api;
 import net.minecraft.world.item.ArmorMaterial;
 import net.minecraft.world.item.Item;
 
-import javax.annotation.Nullable;
+import org.jetbrains.annotations.Nullable;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.IdentityHashMap;

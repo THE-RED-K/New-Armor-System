@@ -3,7 +3,7 @@ package dev.newarmorsystem.api;
 import net.minecraft.world.item.ArmorMaterial;
 import net.minecraft.world.item.ArmorMaterials;
 
-import javax.annotation.Nullable;
+import org.jetbrains.annotations.Nullable;
 import java.util.IdentityHashMap;
 import java.util.Map;
 
@@ -23,8 +23,11 @@ import java.util.Map;
  * @reason 护甲类型分类统一
  */
 public enum ArmorClass {
+    /** 轻甲：皮革、锁链（AT 默认 0.75；锁链因此耐久低于铁套）。 */
     LIGHT,
+    /** 中甲：金、铁、钻石、下界合金（AT 默认 1.0）。 */
     MEDIUM,
+    /** 重甲：海龟（AT 默认 1.5）。 */
     HEAVY;
 
     /** 自定义护甲材料 → 分类登记表（内置材料走 switch，不经过此表）。 */
@@ -56,12 +59,21 @@ public enum ArmorClass {
         return MEDIUM;                           // 未登记的自定义材料默认中甲
     }
 
-    /** 为自定义护甲材料登记分类。 */
+    /**
+     * 为自定义护甲材料登记分类。
+     *
+     * @param material 护甲材料（内置枚举值或自定义实现）
+     * @param clazz    分类；登记后优先于内置规则
+     */
     public static void register(ArmorMaterial material, ArmorClass clazz) {
         CUSTOM_CLASSES.put(material, clazz);
     }
 
-    /** 护甲类型系数（AT）：最终耐久 = 部位系数 × 材料耐久基数 × AT。 */
+    /**
+     * 护甲类型系数（AT）：最终耐久 = 部位系数 × 材料耐久基数 × AT。
+     *
+     * @return 本分类的护甲类型系数（轻 0.75 / 中 1.0 / 重 1.5，可配置）
+     */
     public double ArmorTypeCoefficient() {
         boolean loaded = Config.COMMON_SPEC.isLoaded();
         return switch (this) {
@@ -71,7 +83,11 @@ public enum ArmorClass {
         };
     }
 
-    /** 修理效率系数：单个材料修复量 = 耐久基数 × 4 × AT / 修理效率系数。 */
+    /**
+     * 修理效率系数：单个材料修复量 = 耐久基数 × 4 × AT / 修理效率系数。
+     *
+     * @return 本分类的修理效率系数（轻 1.5 / 中 1.0 / 重 0.75，可配置）
+     */
     public double repairEfficiencyCoefficient() {
         boolean loaded = Config.COMMON_SPEC.isLoaded();
         return switch (this) {

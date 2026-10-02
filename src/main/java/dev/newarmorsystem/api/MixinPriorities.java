@@ -28,7 +28,7 @@ package dev.newarmorsystem.api;
  * 以免本模组的接管层与刻意"最先应用"的 mixin（{@code Integer.MIN_VALUE} 一类）互抢层次。
  *
  * <p><b>使用范围</b>：只用于"整体接管方法体"的 {@code @Overwrite} mixin
- * （{@code CombatRulesMixin}、{@code InventoryMixin}、{@code ItemStackMixin#hurt}、{@code ThornsEnchantmentMixin}）。
+ * （本版为 {@code CombatRulesMixin}、{@code InventoryMixin}、{@code ItemStackMixin#hurt}）。
  * 只做注入 / 重定向的 mixin 一律保持默认优先级 1000 —— 若把它们也压到 500，本模组自己的注入会变成
  * "底层"，反而可能被其它模组后写入的 {@code @Overwrite} 冲掉。
  *

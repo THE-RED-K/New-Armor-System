@@ -46,7 +46,7 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
-import javax.annotation.Nullable;
+import org.jetbrains.annotations.Nullable;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
@@ -111,7 +111,10 @@ public abstract class ItemStackMixin {
         } else {
             if (pAmount > 0) {
                 int UnbreakingLevel = EnchantmentHelper.getItemEnchantmentLevel(Enchantments.UNBREAKING, (ItemStack)(Object) this);
-                if (this.getItem() instanceof ArmorItem || this.getItem() instanceof ShieldItem) {
+                // 功能总开关：关闭时护甲/盾牌落入下方 else 分支，即原版概率减免，完全回到原版
+                boolean deterministicUnbreaking = !Config.COMMON_SPEC.isLoaded()
+                        || Config.COMMON.unbreakingRedefinitionEnabled.get();
+                if (deterministicUnbreaking && (this.getItem() instanceof ArmorItem || this.getItem() instanceof ShieldItem)) {
                     if (Config.COMMON_SPEC.isLoaded()) {
                         pAmount = (int) Math.floor(pAmount / (1.0D + Config.COMMON.unbreakingCoefficient.get() * UnbreakingLevel));
                     } else {
@@ -147,7 +150,9 @@ public abstract class ItemStackMixin {
      * 注入点选在原版 {@code shrink(1)} 指令处（该指令负责销毁物品）：
      * 在此之前 {@code consumer.accept(entity)} 已执行，故 ITEM_BREAK 音效照常播放；
      * cancel 后跳过 shrink 与后续的 {@code setDamageValue(0)}，物品保留并封顶耐久。
-     * 配置关闭时走原版销毁逻辑（不派发事件）。
+     * 配置关闭时走原版销毁逻辑（不派发事件）；被
+     * {@code broken_state.brokenStateExemptItems} 声明的物品同样走原版销毁
+     * （见 {@link BrokenState#isExempt}）—— 默认列表为空，即所有可损坏物品都会进入损坏状态。
      *
      * @author THEREDK
      * @reason 损坏状态替代原版爆掉
@@ -156,6 +161,9 @@ public abstract class ItemStackMixin {
     private void newArmorSystem$onBreak(int pAmount, LivingEntity pEntity, Consumer<LivingEntity> pConsumer, CallbackInfo ci) {
         if (!Config.COMMON_SPEC.isLoaded() || !Config.COMMON.brokenStateEnabled.get()) {
             return;  // 配置关闭：保留原版销毁行为
+        }
+        if (BrokenState.isExempt((ItemStack) (Object) this)) {
+            return;  // 配置声明为「不进入损坏状态」：按原版爆掉消失（不派发事件）
         }
         if (BrokenState.isBroken((ItemStack) (Object) this)) {
             // 归一累积的 over-damage（damage > maxDamage → 回落封顶）。传值 == maxDamage，
@@ -241,7 +249,11 @@ public abstract class ItemStackMixin {
             cir.setReturnValue(ImmutableMultimap.of());
             return;
         }
-        if (this.getItem() instanceof ArmorItem && map.containsKey(Attributes.KNOCKBACK_RESISTANCE)) {
+        // 仅在本模组确实供给击退抗性时才剔除护甲自带的抗性；
+        // 质量系统 / 击退抗性开关关闭时保持原样，让原版抗性回归
+        // （见 PlayerMass#suppliesKnockbackResistance —— 与 PlayerMassEffects 的供给条件同源）
+        if (PlayerMass.suppliesKnockbackResistance()
+                && this.getItem() instanceof ArmorItem && map.containsKey(Attributes.KNOCKBACK_RESISTANCE)) {
             LinkedHashMultimap<Attribute, AttributeModifier> filtered = LinkedHashMultimap.create();
             map.forEach((attribute, modifier) -> {
                 if (attribute != Attributes.KNOCKBACK_RESISTANCE) {
@@ -308,7 +320,7 @@ public abstract class ItemStackMixin {
     /**
      * 物品 tooltip 显示质量与质量系统派生效果。
      *
-     * <p>门槛为<b>物品本身有质量</b>（{@code PlayerMass.getItemMass > 0}）：
+     * <p>门槛为<b>物品本身有质量</b>（{@code PlayerMass.getItemMassExact > 0}）：
      * 护甲（材料公式）与注册了自定义质量的非护甲物品（{@code PlayerMass.registerItemMass}，
      * 如饰品、重剑）均显示 {@code +X 质量}（蓝色，与原版属性前缀对齐）；
      * broken 物品与未注册质量的普通物品不显示任何质量系统行（broken 失去质量属性）。
@@ -343,18 +355,34 @@ public abstract class ItemStackMixin {
      */
     @Inject(method = "getTooltipLines", at = @At("RETURN"))
     private void newArmorSystem$addMassTooltip(@Nullable Player pPlayer, TooltipFlag pIsAdvanced, CallbackInfoReturnable<List<Component>> cir) {
+        if (Config.COMMON_SPEC.isLoaded() && !Config.COMMON.massTooltipEnabled.get()) {
+            return; // 功能总开关关闭：tooltip 不显示任何质量信息
+        }
         List<Component> lines = cir.getReturnValue();
-        int mass = PlayerMass.getItemMass((ItemStack) (Object) this);
-        if (mass <= 0) {
+        double mass = PlayerMass.getItemMassExact((ItemStack) (Object) this);
+        if (mass <= 0.0) {
             return;
         }
         List<Component> extra = new ArrayList<>(5);
-        extra.add(Component.translatable("tooltip.new_armor_system.mass", mass).withStyle(ChatFormatting.BLUE));
+        // 质量显示文本：整数不带小数（3），半格显示一位小数（3.5）
+        String massText = mass % 1.0 == 0.0
+                ? String.valueOf((int) mass)
+                : String.format(Locale.ROOT, "%.1f", mass);
+        extra.add(Component.translatable("tooltip.new_armor_system.mass", massText).withStyle(ChatFormatting.BLUE));
         if (pPlayer != null) {
             // 当前负重比例：灰色，始终显示（无需 F3+H）
             double ratio = PlayerMass.getLoadRatio(pPlayer);
             String percent = String.format(Locale.ROOT, "%.1f%%", ratio * 100);
             extra.add(Component.translatable("tooltip.new_armor_system.load_ratio", percent).withStyle(ChatFormatting.GRAY));
+            // 超重警示：红色加粗，与负重比例同行位置、无需 F3+H。
+            // 仅在"超重归零"生效时提示 —— 否则超重不影响移速，提示会误导；
+            // 阈值随配置显示（player_mass.overloadFactor），避免玩家以为是固定 100%。
+            if ((!Config.COMMON_SPEC.isLoaded() || Config.COMMON.overloadZeroEnabled.get())
+                    && PlayerMass.isOverloaded(pPlayer)) {
+                String limit = String.format(Locale.ROOT, "%.1f%%", PlayerMass.getOverloadFactor() * 100);
+                extra.add(Component.translatable("tooltip.new_armor_system.overload", limit)
+                        .withStyle(ChatFormatting.RED, ChatFormatting.BOLD));
+            }
             if (pIsAdvanced.isAdvanced()) {
                 // 负重比例（预览）：深灰；该物品单独提供的负重比例（物品质量 / 最大负重，不含当前穿戴）
                 String previewPercent = String.format(Locale.ROOT, "+%.1f%%", PlayerMass.getPreviewLoadRatio(pPlayer, mass) * 100);

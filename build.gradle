@@ -251,5 +251,16 @@ tasks.withType(JavaCompile).configureEach {
     options.encoding = 'UTF-8'
 }
 
+// Javadoc 编码：必须与源码一致（源码为 UTF-8）。缺此配置时 javadoc 在中文 Windows 上
+// 会按平台默认编码 GBK 读取源码，直接报"编码 GBK 的不可映射字符"而失败 —— 文档任务
+// 与 doclint 引用校验因此长期无法运行。
+tasks.withType(Javadoc).configureEach {
+    options.encoding = 'UTF-8'
+    // Mixin 约定：@Overwrite 方法的 javadoc 必须带 @reason（Mixin AP 会校验并告警
+    // "@Overwrite is missing an @reason tag"），但它不是标准 javadoc 标签，默认会被
+    // 报"未知标记"而让文档任务失败。在此声明为自定义标签 —— 两边约定同时满足。
+    options.addStringOption('tag', 'reason:a:Reason:')
+}
+
 // 原手动方案的 createMixinSrg / refmap 复制 / reobf extraMappings 钩子已删除：
 // 上述环节全部由 MixinGradle 0.7.38 插件自动完成（对 Forge 1.20.1/FG6 内置支持）

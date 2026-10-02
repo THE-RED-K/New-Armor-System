@@ -103,4 +103,19 @@ public final class DamageReflection {
     public static boolean reflectsToSelf(ArmorMaterial material) {
         return SELF_REFLECT_FLAGS.containsKey(material);
     }
+
+    /**
+     * 反伤功能总开关（{@code feature_toggles.damageReflectionEnabled}，默认开启）。
+     *
+     * <p>关闭时本模组<b>不产生任何反伤</b>（不累积、不派发 {@code ArmorReflectEvent}、不施加伤害），
+     * 且<b>原版荆棘附魔恢复生效</b> —— 兼容开关见
+     * {@code dev.newarmorsystem.mixin.ThornsEnchantmentMixin}：它只在开关开启时停用原版荆棘。
+     *
+     * <p>配置未加载时返回 {@code true}（与默认值一致，避免启动期行为突变）。
+     *
+     * @return 反伤系统是否启用
+     */
+    public static boolean isEnabled() {
+        return !Config.COMMON_SPEC.isLoaded() || Config.COMMON.damageReflectionEnabled.get();
+    }
 }

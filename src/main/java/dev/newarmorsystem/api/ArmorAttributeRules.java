@@ -5,7 +5,7 @@ import net.minecraft.world.item.ArmorItem;
 import net.minecraft.world.item.ArmorMaterial;
 import net.minecraft.world.item.Item;
 
-import javax.annotation.Nullable;
+import org.jetbrains.annotations.Nullable;
 import java.util.EnumMap;
 import java.util.IdentityHashMap;
 import java.util.Map;
@@ -82,6 +82,18 @@ public final class  ArmorAttributeRules {
                 throw new IllegalArgumentException("toughness must be >= 0, got " + toughness);
             }
         }
+    }
+
+    /**
+     * 护甲属性覆写功能总开关（{@code feature_toggles.armorAttributeOverrideEnabled}，默认开启）。
+     *
+     * <p>关闭时 {@code ArmorAttributeMixin} 不再改写任何护甲值 / 盔甲韧性（含强制登记），
+     * 完全回到原版。配置未加载时返回 {@code true}（与默认值一致）。
+     *
+     * @return 护甲属性覆写是否启用
+     */
+    public static boolean isEnabled() {
+        return !Config.COMMON_SPEC.isLoaded() || Config.COMMON.armorAttributeOverrideEnabled.get();
     }
 
     /** 按物品（精确到单件护甲）的覆写表，优先级高于材料表。 */

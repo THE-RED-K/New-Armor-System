@@ -7,7 +7,7 @@ import net.minecraft.world.item.ArmorMaterials;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.Items;
 
-import javax.annotation.Nullable;
+import org.jetbrains.annotations.Nullable;
 
 /**
  * 兼容性模组总登记接口 —— 一次性登记一个护甲材料的全部规则。
@@ -22,7 +22,7 @@ import javax.annotation.Nullable;
  *     myArmorMaterial,            // 第三方护甲材料
  *     ArmorClass.MEDIUM,          // 护甲类型（null = 不登记，保持默认：内置走内置规则，自定义默认中甲）
  *     32.0,                       // 耐久基数（>0 登记；≤0 不登记，走内置/反推）
- *     1.2,                        // 材料质量系数（>0 登记；≤0 不登记，默认 1.0）
+ *     1.2,                        // 材料质量系数（≥0 登记，0 = 零质量；负数不登记，默认 1.0）
  *     1.5,                        // 铁砧修理花费系数（>0 登记；≤0 不登记，用全局配置）
  *     1.0,                        // 工具修正系数（>0 登记；≤0 不登记，默认 1.0）
  *     mySword, myPickaxe, ...);   // 绑定的具体工具物品（可为空数组）
@@ -77,8 +77,8 @@ public final class CompatRegistration {
      * @param material                护甲材料（原版 {@code ArmorMaterials} 枚举值或自定义实现）
      * @param armorClass              护甲类型（{@code null} = 不登记，保持默认）
      * @param durabilityBase          耐久基数（> 0 登记；≤ 0 不登记，走内置/反推）
-     * @param materialMassCoefficient 材料质量系数（> 0 登记；≤ 0 不登记，默认 1.0）
-     * @param repairCostCoefficient   铁砧修理花费系数（> 0 登记；≤ 0 不登记，用全局配置；局部免费见上方说明）
+     * @param materialMassCoefficient 材料质量系数（≥ 0 登记，<b>0 = 零质量</b>；&lt; 0 不登记，默认 1.0）
+     * @param repairCostCoefficient   铁砧修理花费系数（≥ 0 登记，<b>0 = 免费</b>；&lt; 0 不登记，用全局配置）
      * @param toolCoefficient         工具修正系数（> 0 登记；≤ 0 不登记，默认 1.0）
      * @param toolItems               绑定到该材料的具体工具物品（可为空数组）
      */
@@ -97,10 +97,10 @@ public final class CompatRegistration {
         if (durabilityBase > 0) {
             ArmorMaterialRules.registerDurabilityBase(material, durabilityBase);
         }
-        if (materialMassCoefficient > 0) {
+        if (materialMassCoefficient >= 0) {
             PlayerMass.registerMaterialMassCoefficient(material, materialMassCoefficient);
         }
-        if (repairCostCoefficient > 0) {
+        if (repairCostCoefficient >= 0) {
             ArmorRepair.registerRepairCostCoefficient(material, repairCostCoefficient);
         }
         if (toolItems != null) {
@@ -163,6 +163,9 @@ public final class CompatRegistration {
         ArmorAttributeRules.register(item, slot, armor, toughness);
     }
 
+    /** 原版工具绑定是否已执行（幂等保护：与 1.21.1 侧的装配路径同构）。 */
+    private static boolean vanillaToolsRegistered = false;
+
     /**
      * 原版工具绑定示例 —— 按 Item 把原版 25 件工具全部纳入工具耐久法则。
      *
@@ -176,10 +179,15 @@ public final class CompatRegistration {
      * （{@code woodDurabilityBase} / {@code stoneDurabilityBase}，commonSetup 时读取的
      * 快照值）；石工具额外登记 {@code × 0.25} 修正系数（原"金式功能性特例"）。
      *
-     * <p>该方法由本模组在 {@code FMLCommonSetupEvent} 调用；第三方模组可参照此写法
-     * 用 {@link #registerMaterialRulesForTools} 一次登记完整规则。
+     * <p><b>幂等</b>：本方法带一次性保护，重复调用不会重复登记（与 1.21.1 侧行为一致）——
+     * 本模组在 {@code FMLCommonSetupEvent} 调用一次，第三方模组即便再调用一次也无副作用。
+     * 第三方模组可参照此写法用 {@link #registerMaterialRulesForTools} 一次登记完整规则。
      */
     public static void registerVanillaTools() {
+        if (vanillaToolsRegistered) {
+            return;
+        }
+        vanillaToolsRegistered = true;
         // 铁：原版五件铁工具全部绑定铁护甲材料（共享 B = ironDurabilityBase）
         registerToolGroup(ArmorMaterials.IRON,
                 Items.IRON_SWORD, Items.IRON_PICKAXE, Items.IRON_AXE, Items.IRON_SHOVEL, Items.IRON_HOE);

@@ -40,6 +40,9 @@ public abstract class ArmorItemMixin {
     @Redirect(method = "<init>",
             at = @At(value = "INVOKE", target = "Lnet/minecraft/world/item/ArmorMaterial;getDurabilityForType(Lnet/minecraft/world/item/ArmorItem$Type;)I"))
     private static int newArmorSystem$applyCustomMaterialDurability(ArmorMaterial material, ArmorItem.Type type) {
+        if (!Config.COMMON_SPEC.isLoaded() || !Config.COMMON.armorDurabilitySystemEnabled.get()) {
+            return material.getDurabilityForType(type); // 功能总开关关闭：保持原版耐久
+        }
         if (material instanceof ArmorMaterials) {
             return material.getDurabilityForType(type); // 内置材料：ArmorMaterialsMixin 已套用新公式
         }
@@ -55,6 +58,9 @@ public abstract class ArmorItemMixin {
         };
         ArmorClass clazz = ArmorClass.of(material);    // 未登记默认中甲
         double result = ArmorMaterialRules.effectiveDurabilityBase(material, type) * newSlotFactor * clazz.ArmorTypeCoefficient();
-        return Math.max(1, (int) Math.round(result));
+        // 取整为【截断】而非四舍五入，与 1.21.1 的 ArmorDurability 完全一致
+        // （内置材料路径 ArmorMaterialsMixin 同样是 (int) 强转）：两版、两条路径的护甲耐久
+        // 必然取同值 —— 例：金 10×13×0.75 = 97.5 → 97（若此处 round 会得到 98，与 1.21.1 差 1 点）。
+        return Math.max(1, (int) result);
     }
 }

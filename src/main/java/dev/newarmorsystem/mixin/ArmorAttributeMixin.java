@@ -69,6 +69,10 @@ public abstract class ArmorAttributeMixin {
     private void newArmorSystem$applyArmorAttributeRules(EquipmentSlot pSlot,
                                                          CallbackInfoReturnable<Multimap<Attribute, AttributeModifier>> cir) {
         ItemStack stack = (ItemStack) (Object) this;
+        // 功能总开关关闭：保持原版护甲值与韧性
+        if (!ArmorAttributeRules.isEnabled()) {
+            return;
+        }
         // broken 物品由 ItemStackMixin 统一清空修饰符；此处独立检查，与注入顺序无关
         if (BrokenState.isBroken(stack)) {
             return;
