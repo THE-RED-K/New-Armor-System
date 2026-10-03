@@ -23,7 +23,8 @@ public class Config {
 
     public static class Common {
         // ===== 功能总开关 =====
-        // 除「护甲减伤公式」与「护甲耐久损耗公式」是不可关闭的核心功能外，
+        // 除「护甲减伤公式」「护甲耐久损耗公式」以及依附于后者的「破甲重做」
+        // （breach_redefinition，只有四个塑形配置、没有总开关）是不可关闭的核心功能外，
         // 其余功能均可单独关闭；关闭后该功能完全回到原版行为。
         public final ModConfigSpec.BooleanValue armorAttributeOverrideEnabled;
         public final ModConfigSpec.BooleanValue armorDurabilitySystemEnabled;
@@ -49,6 +50,13 @@ public class Config {
         public final ModConfigSpec.DoubleValue durabilityReductionConstant;
         public final ModConfigSpec.DoubleValue toughnessCoefficient;
         public final ModConfigSpec.DoubleValue unbreakingCoefficient;
+        // 荆棘每级反伤系数（damage_reflection.thornsCoefficient，默认 0.15，不封顶）
+        public final ModConfigSpec.DoubleValue thornsCoefficient;
+        // 破甲重击（重锤下落攻击）：倍率 + 三个独立开关（breach_redefinition；无总开关，穿透耐久附魔默认关闭）
+        public final ModConfigSpec.DoubleValue breachDurabilityLossPerLevel;
+        public final ModConfigSpec.BooleanValue breachIgnoresToughness;
+        public final ModConfigSpec.BooleanValue breachPiercesUnbreaking;
+        public final ModConfigSpec.BooleanValue breachAtLeastOneDurability;
 
         // 部位系数修正（部位基数 + 制作所需材料个数）
         public final ModConfigSpec.IntValue slotFactorBase;
@@ -260,6 +268,50 @@ public class Config {
                     .comment("Only applies to armor and shields; other items keep vanilla probabilistic reduction.")
                     .comment("range={0.0 ~ 100.0}")
                     .defineInRange("unbreakingCoefficient", 1.0, 0.0, 100.0);
+            builder.pop();
+
+            // ===== 反伤（荆棘） =====
+            builder.push("damage_reflection");
+            thornsCoefficient = builder
+                    .comment("Reflection per Thorns level: Reflected = (materialRatio + thornsCoefficient * thornsLevel) * durabilityLoss.")
+                    .comment("Default 0.15 (previously a hard-coded 0.6). NO CAP is applied: the total is summed over every")
+                    .comment("damaged piece, so a full set of Thorns III (4 pieces) reflects roughly 45% of the incoming")
+                    .comment("damage, and modded levels keep scaling linearly.")
+                    .comment("range={0.0 ~ 100.0}")
+                    .defineInRange("thornsCoefficient", 0.15, 0.0, 100.0);
+            builder.pop();
+
+            // ===== 破甲重做（重锤下落攻击 → 耐久损耗语言） =====
+            // 不可关闭（无总开关，只有下列四个塑形配置）：护甲减伤公式恒开启 ⇒ 破甲的原版语义
+            // （降低减伤比例）没有执行路径，而破甲必须落进本模组的三条合法破甲语言之一。
+            // 第三方若要绕过本模组的减伤/损耗公式再自建破甲，用事件（ArmorReduceEvent /
+            // 原生 ArmorHurtEvent / ArmorReflectEvent）即可，改这四个配置就够，无需总开关。
+            // 注意：后两条（至少 1 点 / 穿透）依赖「耐久附魔重做」
+            // （feature_toggles.unbreakingRedefinitionEnabled）：该开关关闭时耐久附魔回到原版，
+            // 减免结果无法预知，破甲这两条规则退化为不干预。
+            builder.push("breach_redefinition");
+            breachDurabilityLossPerLevel = builder
+                    .comment("Armor durability loss multiplier added by a Breach mace smash attack, per level.")
+                    .comment("Loss = base * (1 + breachDurabilityLossPerLevel * level), base = max(1, floor(D / divisor)).")
+                    .comment("This replaces vanilla Breach (armor effectiveness), which has no execution path in this mod.")
+                    .comment("range={0.0 ~ 100.0}")
+                    .defineInRange("breachDurabilityLossPerLevel", 0.2, 0.0, 100.0);
+            breachIgnoresToughness = builder
+                    .comment("Breach smash attacks ignore armor toughness in the durability loss formula")
+                    .comment("(divisor = durabilityReductionConstant only, without the toughness term).")
+                    .comment("When false, the piece's toughness protects its durability as usual.")
+                    .define("breachIgnoresToughness", true);
+            breachAtLeastOneDurability = builder
+                    .comment("A Breach smash attack always costs at least 1 durability, even if Unbreaking would reduce it to 0.")
+                    .comment("DEFAULT TRUE - this is the enchantment's only 'magical' component: Unbreaking may reduce the loss")
+                    .comment("but can never cancel it entirely.")
+                    .define("breachAtLeastOneDurability", true);
+            breachPiercesUnbreaking = builder
+                    .comment("Breach smash attacks pierce Unbreaking: the target durability loss is applied in full.")
+                    .comment("DEFAULT FALSE - too strong. Enable it only if the pack wants Breach to ignore Unbreaking")
+                    .comment("completely (then at-least-1-point is satisfied automatically).")
+                    .comment("Independent from breachAtLeastOneDurability - enable either, both or neither.")
+                    .define("breachPiercesUnbreaking", false);
             builder.pop();
 
             // ===== 部位系数修正（部位基数+制作所需材料个数） =====

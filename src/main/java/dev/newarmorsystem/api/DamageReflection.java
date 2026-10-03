@@ -23,8 +23,9 @@ import java.util.Map;
  *       （穿戴者），而不是反伤目标 —— 无论伤害来源是谁、是否存在实体来源。</li>
  * </ul>
  *
- * <p><b>反伤比例构成</b>：反伤比例 = 本登记表材料比例 + <b>荆棘附魔等级 × 60%</b>
- * （每级 +60%，必定反伤、无概率判定；原版荆棘机制已被禁用并并入本系统）。
+ * <p><b>反伤比例构成</b>：反伤比例 = 本登记表材料比例 + <b>荆棘附魔等级 × 系数</b>
+ * （系数见 {@link #thornsCoefficient()}，默认 <b>0.15</b>、可配置；必定反伤、无概率判定；
+ * 且<b>不封顶</b> —— 反伤总量为逐件求和，上限交由整合包用配置自行决定）。
  * 材料比例默认 <b>0%</b>（当前所有原版护甲均未登记），仅靠材料时反伤为 0 ——
  * 该登记表是未来附属模组的预留接口；原版护甲附荆棘即可获得荆棘部分的反伤。
  *
@@ -123,5 +124,18 @@ public final class DamageReflection {
      */
     public static boolean isEnabled() {
         return !Config.COMMON_SPEC.isLoaded() || Config.COMMON.damageReflectionEnabled.get();
+    }
+
+    /**
+     * 荆棘每级反伤系数（{@code damage_reflection.thornsCoefficient}，默认 {@code 0.15}）。
+     *
+     * <p>反伤比例 = 材料比例 + 该系数 × 荆棘等级（见 {@code ArmorHurtHandler#apply}）。
+     * 语义与"必定反伤"一致：等级越高反击越强；<b>不做封顶</b> —— 总量为逐件求和，
+     * 上限交由整合包用配置自行决定。配置未加载时返回默认值，避免启动期行为突变。
+     *
+     * @return 每级荆棘的反伤系数（默认 0.15，即每级 +15%）
+     */
+    public static double thornsCoefficient() {
+        return Config.COMMON_SPEC.isLoaded() ? Config.COMMON.thornsCoefficient.get() : 0.15;
     }
 }

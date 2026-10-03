@@ -43,11 +43,19 @@ import net.neoforged.neoforge.event.entity.living.ArmorHurtEvent;
  * （{@code entry.armorItemStack.hurtAndBreak((int) entry.newDamage, entity, slot)}，
  * 见 {@code CommonHooks#onArmorHurt}）—— 因为进入本类的入口已早于该调用，故此处复刻该施加语句。
  *
+ * <p><b>破甲重击</b>：来源是重锤下落攻击时（{@link NewCombatRules#getBreachLevel(DamageSource)}），
+ * 本次每件护甲的损耗改走本模组「物理冲击磨损护甲」的破甲语言 —— 无视韧性、每级 +20% 倍率、
+ * 且<b>至少磨损 1 点</b>（默认<b>不</b>穿透耐久附魔：耐久附魔仍可减免，但减不到 0；是否穿透见
+ * {@code breach_redefinition.breachPiercesUnbreaking}）。见
+ * {@link NewCombatRules#getBreachDurabilityLoss} 与 {@link NewCombatRules#breachAwareHurtAmount}。
+ * 伤害与减伤公式分毫不动，故与致密不冲突。
+ *
  * <p><b>反伤</b>：护甲实际损失耐久时（{@code actualLoss > 0}），按
  * 反伤比例 × 损失耐久度累积反伤，在耐久施加完成后派发 {@link ArmorReflectEvent} 并施加
  * {@code thorns} 类型反伤 —— 顺序与 1.20.1 完全一致。反伤比例 =
- * {@link DamageReflection#of} 的材料比例 + 荆棘附魔等级 × 60%
- * （每级 +60%，必定反伤、无概率判定；原版荆棘机制已由
+ * {@link DamageReflection#of} 的材料比例 + 荆棘附魔等级 × 系数
+ * （系数见 {@link DamageReflection#thornsCoefficient()}，默认每级 +15%、可配置、<b>不封顶</b>；
+ * 必定反伤、无概率判定；原版荆棘机制已由
  * {@code dev.newarmorsystem.mixin.ThornsEnchantmentMixin} 禁用）。反伤目标：
  * 默认对伤害来源实体（{@code DamageSource#getEntity()}，可为玩家自己）；
  * 若受损失护甲中任一件开启了 {@link DamageReflection#reflectsToSelf}
@@ -79,6 +87,8 @@ public final class ArmorHurtHandler {
         }
         // 反伤伤害（thorns 类型）本身不累积反伤，防止反伤护甲互击时无限循环
         boolean isReflectionDamage = source.is(DamageTypes.THORNS);
+        // 破甲重击（重锤下落攻击）：本次损耗走"物理冲击磨损护甲"语言 —— 无视韧性、每级 +20% 倍率、至少 1 点
+        int breachLevel = NewCombatRules.getBreachLevel(source);
         // 每件护甲对反伤总量的贡献（比例 × 该件实际损耗），派发 ArmorReflectEvent 用
         EnumMap<EquipmentSlot, Float> reflections = new EnumMap<>(EquipmentSlot.class);
 
@@ -89,7 +99,10 @@ public final class ArmorHurtHandler {
             if (stack.isEmpty() || !(stack.getItem() instanceof ArmorItem) || !stack.canBeHurtBy(source)) {
                 continue;
             }
-            float loss = NewCombatRules.getDurabilityLoss(damage,
+            float loss = breachLevel > 0
+                    ? NewCombatRules.getBreachDurabilityLoss(damage,
+                    NewCombatRules.getPieceToughness(stack, slot), breachLevel)
+                    : NewCombatRules.getDurabilityLoss(damage,
                     NewCombatRules.getPieceToughness(stack, slot),
                     NewCombatRules.hasUnbreaking(stack));
             entries.put(slot, new ArmorHurtEvent.ArmorEntry(stack, loss));
@@ -123,17 +136,19 @@ public final class ArmorHurtHandler {
                     if (DamageReflection.reflectsToSelf(material)) {
                         reflectToSelf = true;
                     }
-                    // 反伤比例 = 材料反伤比例 + 荆棘附魔每级 +60%（必定反伤，无概率）
+                    // 反伤比例 = 材料反伤比例 + 荆棘附魔等级 × 系数（可配置，默认每级 +15%；必定反伤，无概率）
                     double ratio = DamageReflection.of(material);
                     int thornsLevel = NewCombatRules.getThornsLevel(stack);
                     if (thornsLevel > 0) {
-                        ratio += 0.6 * thornsLevel;
+                        ratio += DamageReflection.thornsCoefficient() * thornsLevel;
                     }
                     float contribution = (float) (ratio * actualLoss);
                     reflections.put(slot, contribution);
                     reflectedDamage += contribution;
                 }
-                stack.hurtAndBreak(actualLoss, entity, slot);
+                // 破甲重击的施加换算：默认只保证"减免后仍 ≥ 1 点"，开启穿透时打满 actualLoss
+                stack.hurtAndBreak(
+                        NewCombatRules.breachAwareHurtAmount(actualLoss, breachLevel, stack), entity, slot);
             }
         }
 

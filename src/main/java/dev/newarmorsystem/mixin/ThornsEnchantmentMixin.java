@@ -30,7 +30,8 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
  * 反伤与额外耐久损耗<b>一并停用</b>，与 1.20.1 的空实现语义一致。
  *
  * <p>本模组的替代方案：反伤在护甲<b>损失耐久时</b>统一结算
- * （见 {@code ArmorHurtHandler#apply}），反伤比例 = 材料反伤比例 + 荆棘等级 × 60%，
+ * （见 {@code ArmorHurtHandler#apply}），反伤比例 = 材料反伤比例 + 荆棘等级 × 系数
+ * （{@code damage_reflection.thornsCoefficient}，默认 0.15、可配置、不封顶），
  * <b>必定反伤</b>（无概率判定）。
  *
  * <p><b>功能总开关</b>：{@code feature_toggles.damageReflectionEnabled} 关闭时

@@ -9,6 +9,8 @@ import net.minecraft.ChatFormatting;
 import net.minecraft.core.Holder;
 import net.minecraft.core.particles.ItemParticleOption;
 import net.minecraft.core.particles.ParticleTypes;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.contents.PlainTextContents;
 import net.minecraft.network.chat.contents.TranslatableContents;
@@ -29,6 +31,7 @@ import net.minecraft.world.item.TooltipFlag;
 import net.minecraft.world.item.component.ItemAttributeModifiers;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.state.BlockState;
+import net.neoforged.fml.ModList;
 import net.neoforged.neoforge.common.NeoForge;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Unique;
@@ -296,9 +299,11 @@ public abstract class ItemStackMixin {
      * 无需 F3+H）；开启 F3+H（高级提示）再追加该物品<b>单独提供</b>的预览三项：
      * 负重比例（深灰）、移速减益（红色）、击退抗性（蓝色，整数显示）。
      *
-     * <p>插入位置按四级锚点依次尝试：attributeslib/Apotheosis 属性区块 →
-     * 原版属性行（韧性优先，其次护甲值）→ 注册名行之前（F3+H 的
-     * {@code minecraft:xxx}）→ 追加到列表末尾。
+     * <p>插入位置按五级锚点依次尝试：attributeslib/Apotheosis 属性区块 →
+     * 原版属性行（韧性优先，其次护甲值）→ <b>模组名行之前</b>（JEI 等经
+     * {@code ItemTooltipEvent} 追加的模组展示名，原版物品即 {@code "Minecraft"}；
+     * 实测反馈的"掉到 Minecraft 标下方"正是这一级缺位时追加落到它下面所致）→
+     * 注册名行之前（F3+H 的 {@code minecraft:xxx}）→ 追加到列表末尾。
      *
      * @author THEREDK
      * @reason 质量系统可视化，排版与原版护甲属性保持一致
@@ -368,14 +373,21 @@ public abstract class ItemStackMixin {
             lines.addAll(vanillaAttrLine + 1, extra);
             return;
         }
-        // 锚点 3：注册名行（F3+H 的 minecraft:xxx）之前 —— 与 addBrokenTooltip 同款兜底：
-        // 找不到属性行时（饰品、无属性自定义护甲等）质量行也不应掉到注册名行下方
+        // 锚点 3：模组名行之前 —— JEI 等经 ItemTooltipEvent（getTooltipLines 的最后一句）往列表里
+        // 追加模组展示名（原版物品即 "Minecraft"）；插在它之前才能把质量块放进物品自身内容区。
+        // 必须先于注册名行判断：JEI 环境下通常未开 F3+H，若先查注册名会直接落到末尾、又掉到它下方
+        int modNameLine = newArmorSystem$findModNameLine(lines, (ItemStack) (Object) this);
+        if (modNameLine >= 0) {
+            lines.addAll(modNameLine, extra);
+            return;
+        }
+        // 锚点 4：注册名行（F3+H 的 minecraft:xxx）之前 —— 与 addBrokenTooltip 同款兜底
         int registryLine = newArmorSystem$findRegistryNameLine(lines);
         if (registryLine >= 0) {
             lines.addAll(registryLine, extra);
             return;
         }
-        // 锚点 4：都没有（未开 F3+H 且无属性行）→ 追加到列表末尾
+        // 锚点 5：都没有 → 追加到列表末尾
         lines.addAll(extra);
     }
 
@@ -445,6 +457,44 @@ public abstract class ItemStackMixin {
             }
         }
         return false;
+    }
+
+    /**
+     * 在 tooltip 行列表中定位<b>模组名行</b>—— JEI 等经 {@code ItemTooltipEvent} 追加的
+     * 模组展示名，文本等于该物品所属模组的展示名（原版物品即 {@code "Minecraft"}）。
+     *
+     * <p>从第 1 行起找（跳过物品名本身），取<b>最早</b>的一条：模组名之后往往还跟着其它附加行
+     * （合成信息等），插在模组名之前可保证整个质量块位于它们之上。找不到时返回 -1。
+     */
+    @Unique
+    private static int newArmorSystem$findModNameLine(List<Component> lines, ItemStack stack) {
+        String displayName = newArmorSystem$modDisplayName(stack);
+        if (displayName == null || displayName.isEmpty()) {
+            return -1;
+        }
+        for (int i = 1; i < lines.size(); i++) {
+            Component line = lines.get(i);
+            if (line.getContents() instanceof PlainTextContents.LiteralContents literal
+                    && displayName.equals(literal.text())) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    /**
+     * 物品所属模组的展示名：{@code minecraft} 命名空间即 {@code "Minecraft"}（JEI 的写法），
+     * 其余按加载器的模组列表查展示名；查不到时返回 {@code null}（该级锚点自动失效）。
+     */
+    @Unique
+    private static String newArmorSystem$modDisplayName(ItemStack stack) {
+        ResourceLocation id = BuiltInRegistries.ITEM.getKey(stack.getItem());
+        if ("minecraft".equals(id.getNamespace())) {
+            return "Minecraft";
+        }
+        return ModList.get().getModContainerById(id.getNamespace())
+                .map(container -> container.getModInfo().getDisplayName())
+                .orElse(null);
     }
 
     /**

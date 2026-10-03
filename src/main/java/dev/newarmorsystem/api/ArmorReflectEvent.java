@@ -17,7 +17,7 @@ import net.neoforged.neoforge.event.entity.living.LivingEvent;
  * <p>本事件由 {@link ArmorHurtHandler#apply} 在<b>护甲耐久真正扣除之后、累积反伤量施加之前</b>
  * 派发（见 {@code dev.newarmorsystem.mixin.LivingEntityHurtEquipmentMixin}）。
  * 没有被监听时行为与不派发完全一致：反伤量 = 各件
- * （{@link DamageReflection#of} 材料比例 + 荆棘附魔等级 × 60%）× 该件实际损耗的耐久之和，
+ * （{@link DamageReflection#of} 材料比例 + 荆棘附魔等级 × {@link DamageReflection#thornsCoefficient()}）× 该件实际损耗的耐久之和，
  * 目标与伤害类型也与公式路径一致。
  *
  * <p><b>1.20.1 → 1.21.1</b>：派发位置由 {@code Inventory#hurtArmor} 的 {@code @Overwrite}
@@ -94,7 +94,8 @@ public class ArmorReflectEvent extends LivingEvent implements ICancellableEvent 
     }
 
     /**
-     * 每件护甲对反伤总量的贡献（(材料比例 + 荆棘等级 × 60%) × 该件实际损耗的耐久）。
+     * 每件护甲对反伤总量的贡献（(材料比例 + 荆棘等级 × 系数) × 该件实际损耗的耐久；
+     * 系数默认 0.15，见 {@link DamageReflection#thornsCoefficient()}）。
      *
      * @return 按槽位索引的贡献表（只读视图；仅含实际产生反伤的护甲）
      */
