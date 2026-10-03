@@ -16,7 +16,8 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
  * （{@code 1 ~ 4} 点伤害），且触发时对随机一件荆棘护甲<b>额外损耗 2 点耐久</b>。
  *
  * <p>本模组：反伤在护甲<b>损失耐久时</b>统一结算
- * （{@code InventoryMixin#hurtArmor}），反伤比例 = 材料反伤比例 + 荆棘等级 × 60%，
+ * （{@code InventoryMixin#hurtArmor}），反伤比例 = 材料反伤比例 + 荆棘等级 × 系数
+ * （{@code damage_reflection.thornsCoefficient}，默认 0.15、可配置、不封顶），
  * <b>必定反伤</b>（无概率判定）。故本模组反伤系统开启时，原版机制整体停用。
  *
  * <p><b>功能总开关</b>：{@code feature_toggles.damageReflectionEnabled} 关闭时

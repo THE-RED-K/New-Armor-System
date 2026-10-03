@@ -44,6 +44,8 @@ public class Config {
         public final ForgeConfigSpec.DoubleValue durabilityReductionConstant;
         public final ForgeConfigSpec.DoubleValue toughnessCoefficient;
         public final ForgeConfigSpec.DoubleValue unbreakingCoefficient;
+        // 荆棘每级反伤系数（damage_reflection.thornsCoefficient，默认 0.15，不封顶）
+        public final ForgeConfigSpec.DoubleValue thornsCoefficient;
 
         // 部位系数修正（部位基数 + 制作所需材料个数）
         public final ForgeConfigSpec.IntValue slotFactorBase;
@@ -253,6 +255,17 @@ public class Config {
                     .comment("0 = no reduction (vanilla loss); higher = more reduction. Low damage may be fully negated.")
                     .comment("range={0.0 ~ 100.0}")
                     .defineInRange("unbreakingCoefficient", 1.0, 0.0, 100.0);
+            builder.pop();
+
+            // ===== 反伤（荆棘） =====
+            builder.push("damage_reflection");
+            thornsCoefficient = builder
+                    .comment("Reflection per Thorns level: Reflected = (materialRatio + thornsCoefficient * thornsLevel) * durabilityLoss.")
+                    .comment("Default 0.15 (previously a hard-coded 0.6). NO CAP is applied: the total is summed over every")
+                    .comment("damaged piece, so a full set of Thorns III (4 pieces) reflects roughly 45% of the incoming")
+                    .comment("damage, and modded levels keep scaling linearly.")
+                    .comment("range={0.0 ~ 100.0}")
+                    .defineInRange("thornsCoefficient", 0.15, 0.0, 100.0);
             builder.pop();
 
             // ===== 部位系数修正（部位基数+制作所需材料个数） =====

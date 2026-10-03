@@ -15,6 +15,8 @@ import net.minecraft.ChatFormatting;
 import net.minecraft.advancements.CriteriaTriggers;
 import net.minecraft.core.particles.ItemParticleOption;
 import net.minecraft.core.particles.ParticleTypes;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.util.RandomSource;
@@ -37,6 +39,7 @@ import net.minecraft.world.item.enchantment.Enchantments;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraftforge.common.MinecraftForge;
+import net.minecraftforge.fml.ModList;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Overwrite;
 import org.spongepowered.asm.mixin.Shadow;
@@ -325,7 +328,7 @@ public abstract class ItemStackMixin {
      * 如饰品、重剑）均显示 {@code +X 质量}（蓝色，与原版属性前缀对齐）；
      * broken 物品与未注册质量的普通物品不显示任何质量系统行（broken 失去质量属性）。
      *
-     * <p>质量行与 4 个 UI 行作为一个整体插入，位置按三级锚点依次尝试：
+     * <p>质量行与 4 个 UI 行作为一个整体插入，位置按五级锚点依次尝试：
      * <ol>
      *   <li><b>attributeslib（Apothic Attributes）/ Apotheosis 属性区块</b>
      *       （{@link #newArmorSystem$findAttributesLibBlockEnd}，翻译键前缀
@@ -337,11 +340,15 @@ public abstract class ItemStackMixin {
      *       → 插在韧性行下一行；否则 "+X 护甲值"
      *       （{@link #newArmorSystem$findArmorAttributeLine}，铁/金等无韧性护甲）
      *       → 插在护甲值行下一行；</li>
+     *   <li><b>模组名行</b>（JEI 等经 {@code ItemTooltipEvent} 追加的模组展示名，原版物品即
+     *       {@code "Minecraft"}；{@link #newArmorSystem$findModNameLine}）→ 插在它<b>之前</b>。
+     *       该事件是 {@code getTooltipLines} 的最后一句，故 RETURN 时模组名行已在列表里 ——
+     *       缺这一级时质量行必然落到 "Minecraft" 下方（实测反馈的排版问题正出在此）；</li>
      *   <li><b>注册名行</b>（F3+H 的 {@code minecraft:xxx}，
      *       {@link #newArmorSystem$findRegistryNameLine}）→ 插在它<b>之前</b>；
-     *       这是与 {@link #newArmorSystem$addBrokenTooltip} 同款的兜底：饰品、无属性的
-     *       自定义护甲等缺少属性行时，质量行也不该掉到注册名行下方（实测反馈的排版问题）；</li>
-     *   <li>都没有（未开 F3+H 且无属性行）→ 追加到列表末尾。</li>
+     *       与 {@link #newArmorSystem$addBrokenTooltip} 同款的兜底：饰品、无属性的
+     *       自定义护甲等缺少属性行时，质量行也不该掉到注册名行下方；</li>
+     *   <li>都没有（未开 F3+H、无属性行、也查不到模组名）→ 追加到列表末尾。</li>
      * </ol>
      *
      * <p>块内顺序与现状一致：{@code +X 质量} 行在前；持有者非空时显示
@@ -414,14 +421,21 @@ public abstract class ItemStackMixin {
             lines.addAll(vanillaAttrLine + 1, extra);
             return;
         }
-        // 锚点 3：注册名行（F3+H 的 minecraft:xxx）之前 —— 与 addBrokenTooltip 同款兜底：
-        // 找不到属性行时（饰品、无属性自定义护甲等）质量行也不应掉到注册名行下方
+        // 锚点 3：模组名行之前 —— JEI 等经 ItemTooltipEvent（getTooltipLines 的最后一句）往列表里
+        // 追加模组展示名（原版物品即 "Minecraft"）；插在它之前才能把质量块放进物品自身内容区。
+        // 必须先于注册名行判断：JEI 环境下通常未开 F3+H，若先查注册名会直接落到末尾、又掉到它下方
+        int modNameLine = newArmorSystem$findModNameLine(lines, (ItemStack) (Object) this);
+        if (modNameLine >= 0) {
+            lines.addAll(modNameLine, extra);
+            return;
+        }
+        // 锚点 4：注册名行（F3+H 的 minecraft:xxx）之前 —— 与 addBrokenTooltip 同款兜底
         int registryLine = newArmorSystem$findRegistryNameLine(lines);
         if (registryLine >= 0) {
             lines.addAll(registryLine, extra);
             return;
         }
-        // 锚点 4：都没有（未开 F3+H 且无属性行）→ 追加到列表末尾
+        // 锚点 5：都没有 → 追加到列表末尾
         lines.addAll(extra);
     }
 
@@ -507,6 +521,44 @@ public abstract class ItemStackMixin {
             }
         }
         return false;
+    }
+
+    /**
+     * 在 tooltip 行列表中定位<b>模组名行</b>—— JEI 等经 {@code ItemTooltipEvent} 追加的
+     * 模组展示名，文本等于该物品所属模组的展示名（原版物品即 {@code "Minecraft"}）。
+     *
+     * <p>从第 1 行起找（跳过物品名本身），取<b>最早</b>的一条：模组名之后往往还跟着其它附加行
+     * （合成信息等），插在模组名之前可保证整个质量块位于它们之上。找不到时返回 -1。
+     */
+    @Unique
+    private static int newArmorSystem$findModNameLine(List<Component> lines, ItemStack stack) {
+        String displayName = newArmorSystem$modDisplayName(stack);
+        if (displayName == null || displayName.isEmpty()) {
+            return -1;
+        }
+        for (int i = 1; i < lines.size(); i++) {
+            Component line = lines.get(i);
+            if (line.getContents() instanceof LiteralContents literal
+                    && displayName.equals(literal.text())) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    /**
+     * 物品所属模组的展示名：{@code minecraft} 命名空间即 {@code "Minecraft"}（JEI 的写法），
+     * 其余按加载器的模组列表查展示名；查不到时返回 {@code null}（该级锚点自动失效）。
+     */
+    @Unique
+    private static String newArmorSystem$modDisplayName(ItemStack stack) {
+        ResourceLocation id = BuiltInRegistries.ITEM.getKey(stack.getItem());
+        if ("minecraft".equals(id.getNamespace())) {
+            return "Minecraft";
+        }
+        return ModList.get().getModContainerById(id.getNamespace())
+                .map(container -> container.getModInfo().getDisplayName())
+                .orElse(null);
     }
 
     /**

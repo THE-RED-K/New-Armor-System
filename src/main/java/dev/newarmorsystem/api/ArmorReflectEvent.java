@@ -17,7 +17,7 @@ import net.minecraftforge.event.entity.living.LivingEvent;
  * {@code @Overwrite} 方法体在<b>按件累积完反伤量之后、对目标施加 {@code thorns}
  * 伤害之前</b>派发（见 {@code dev.newarmorsystem.mixin.InventoryMixin}）。
  * 没有被监听时行为与不派发完全一致：反伤量 = 各件
- * （{@link DamageReflection#of} 材料比例 + 荆棘附魔等级 × 60%）× 该件实际损耗的耐久
+ * （{@link DamageReflection#of} 材料比例 + 荆棘附魔等级 × {@link DamageReflection#thornsCoefficient()}）× 该件实际损耗的耐久
  * 之和，目标与伤害类型也与公式路径一致。
  *
  * <p><b>默认目标</b>：任一受损护甲开启 {@link DamageReflection#reflectsToSelf}
@@ -94,7 +94,8 @@ public class ArmorReflectEvent extends LivingEvent {
     }
 
     /**
-     * 每件护甲对反伤总量的贡献（(材料比例 + 荆棘等级 × 60%) × 该件实际损耗的耐久）。
+     * 每件护甲对反伤总量的贡献（(材料比例 + 荆棘等级 × 系数) × 该件实际损耗的耐久；
+     * 系数默认 0.15，见 {@link DamageReflection#thornsCoefficient()}）。
      *
      * @return 按槽位索引的贡献表（只读视图；仅含实际产生反伤的护甲）
      */

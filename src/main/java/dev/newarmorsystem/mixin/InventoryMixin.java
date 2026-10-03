@@ -67,8 +67,9 @@ public abstract class InventoryMixin {
      *
      * <p><b>反伤</b>：护甲实际损失耐久时（{@code actualLoss > 0}），按
      * 反伤比例 × 损失耐久度累积反伤，在循环结束后施加 {@code thorns} 类型反伤。
-     * 反伤比例 = {@link DamageReflection#of} 的材料比例 + 荆棘附魔等级 × 60%
-     * （每级 +60%，必定反伤、无概率判定；原版荆棘机制已由
+     * 反伤比例 = {@link DamageReflection#of} 的材料比例 + 荆棘附魔等级 × 系数
+     * （系数见 {@link DamageReflection#thornsCoefficient()}，默认每级 +15%、可配置、<b>不封顶</b>；
+     * 必定反伤、无概率判定；原版荆棘机制已由
      * {@link ThornsEnchantmentMixin} 禁用）。反伤目标：
      * 默认对伤害来源实体（{@code DamageSource#getEntity()}，可为玩家自己）；
      * 若受损失护甲中任一件开启了 {@link DamageReflection#reflectsToSelf}
@@ -125,11 +126,11 @@ public abstract class InventoryMixin {
                             if (DamageReflection.reflectsToSelf(armorItem.getMaterial())) {
                                 reflectToSelf = true;
                             }
-                            // 反伤比例 = 材料反伤比例 + 荆棘附魔每级 +60%（必定反伤，无概率）
+                            // 反伤比例 = 材料反伤比例 + 荆棘附魔等级 × 系数（可配置，默认每级 +15%；必定反伤，无概率）
                             double ratio = DamageReflection.of(armorItem.getMaterial());
                             int thornsLevel = EnchantmentHelper.getItemEnchantmentLevel(Enchantments.THORNS, itemstack);
                             if (thornsLevel > 0) {
-                                ratio += 0.6 * thornsLevel;
+                                ratio += DamageReflection.thornsCoefficient() * thornsLevel;
                             }
                             float contribution = (float) (ratio * actualLoss);
                             reflections.put(slot, contribution);
