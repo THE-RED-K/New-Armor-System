@@ -12,7 +12,8 @@
     "LivingEntityFallDamageMixin",
     "JumpBoostSafeFallDistanceMixin",
     "LivingEntityHurtEquipmentMixin",
-    "ThornsEnchantmentMixin"
+    "ThornsEnchantmentMixin",
+    "SunderingCompatMixin"
   ],
   "client": [
   ],

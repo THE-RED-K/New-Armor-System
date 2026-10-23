@@ -29,6 +29,9 @@ sourceSets.main.resources {
 repositories {
     // Add here additional repositories if required by some of the dependencies below.
 
+    // MixinExtras（JarJar 需要能从 Maven Central 解析）
+    mavenCentral()
+
     // Curios（软依赖）：官方 maven，用于 compileOnly 编译期联动饰品槽
     maven {
         name = 'Curios'
@@ -143,6 +146,19 @@ dependencies {
     // For more info:
     // http://www.gradle.org/docs/current/userguide/artifact_dependencies_tutorial.html
     // http://www.gradle.org/docs/current/userguide/dependency_management.html
+
+    // MixinExtras 0.5.5：@WrapOperation / @ModifyExpressionValue 等"只包住一次调用"的兼容性注入器。
+    // common 提供注解与 API（编译期），neoforge 为 NeoForge 平台运行期，经 JarJar 随本 jar 内置。
+    // 版本范围一律开区间 [0.5.5,) —— JarJar 对同一 artifact 的所有内置副本按"版本范围交集"解析，
+    // 并选中实际打包版本最高的那一份（JarSelector.select → restrictRanges → artifactVersion == recommendedVersion）；
+    // 写上界会把交集压低，甚至导致 VERSION_RESOLUTION_FAILED。
+    implementation 'io.github.llamalad7:mixinextras-common:0.5.5'
+    annotationProcessor 'io.github.llamalad7:mixinextras-common:0.5.5'
+    // 版本范围说明：ModDevGradle 的 JarJar 自己从 Gradle 的 VersionConstraint 生成 range
+    // （JarJarArtifacts#makeOpenRange / #getModuleVersionRange），普通版本号即生成开区间 [0.5.5,)。
+    // 注意 ForgeGradle 6 的 version { range '...' } 语法在这里【不存在】——
+    // 会报 "Could not find method range() ... on DefaultMutableVersionConstraint"。
+    implementation jarJar('io.github.llamalad7:mixinextras-neoforge:0.5.5')
 
     // Curios（软依赖）：compileOnly 仅编译期联动，不打包进 jar；
     // 运行时由 ModList.isLoaded("curios") 保护，未安装 Curios 也能正常运行
