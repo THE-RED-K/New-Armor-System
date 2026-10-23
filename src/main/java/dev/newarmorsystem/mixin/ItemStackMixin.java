@@ -4,15 +4,16 @@ package dev.newarmorsystem.mixin;
 import com.google.common.collect.ImmutableMultimap;
 import com.google.common.collect.LinkedHashMultimap;
 import com.google.common.collect.Multimap;
+import com.llamalad7.mixinextras.injector.ModifyExpressionValue;
+import com.llamalad7.mixinextras.injector.ModifyReturnValue;
 import dev.newarmorsystem.api.BrokenState;
 import dev.newarmorsystem.api.Config;
 import dev.newarmorsystem.api.ItemBrokenEvent;
 import dev.newarmorsystem.api.ItemRepairedEvent;
-import dev.newarmorsystem.api.MixinPriorities;
+import dev.newarmorsystem.api.NewCombatRules;
 import dev.newarmorsystem.api.PlayerMass;
 import dev.newarmorsystem.api.PlayerMassEffects;
 import net.minecraft.ChatFormatting;
-import net.minecraft.advancements.CriteriaTriggers;
 import net.minecraft.core.particles.ItemParticleOption;
 import net.minecraft.core.particles.ParticleTypes;
 import net.minecraft.core.registries.BuiltInRegistries;
@@ -34,18 +35,16 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.ShieldItem;
 import net.minecraft.world.item.TooltipFlag;
 import net.minecraft.network.chat.Component;
-import net.minecraft.world.item.enchantment.EnchantmentHelper;
-import net.minecraft.world.item.enchantment.Enchantments;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraftforge.common.MinecraftForge;
 import net.minecraftforge.fml.ModList;
 import org.spongepowered.asm.mixin.Mixin;
-import org.spongepowered.asm.mixin.Overwrite;
 import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
+import org.spongepowered.asm.mixin.injection.ModifyVariable;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
@@ -58,7 +57,7 @@ import net.minecraft.network.chat.contents.LiteralContents;
 import net.minecraft.network.chat.contents.TranslatableContents;
 
 /**
- * 按物品类型替换 {@link ItemStack#hurt(int, RandomSource, ServerPlayer)}
+ * 按物品类型改写 {@link ItemStack#hurt(int, RandomSource, ServerPlayer)}
  * 中的耐久附魔（Unbreaking）减免逻辑。
  * <p>
  * 护甲（{@link ArmorItem}）与盾牌（{@link ShieldItem}）：
@@ -70,14 +69,34 @@ import net.minecraft.network.chat.contents.TranslatableContents;
  * 其它物品（工具、武器、弓、鞘翅等）：单次损耗恒为 1，
  * 确定性公式会导致其永不磨损或减免完全无效，故保留原版概率性减免。
  * <p>
- * 注意：本模组使用 {@code @Overwrite} 直接覆盖原方法体，
- * 因此与其它同样修改耐久附魔判定的 Mod 不兼容 —— 这是本模组的设计定位。
+ * <b>实现方式（2026-10-21 重构：接管 → 注入）</b>：不再 {@code @Overwrite} 整方法体，
+ * 改为两个注入器叠加在<b>原版方法体</b>上（MixinExtras 0.5.5 的
+ * {@code @ModifyExpressionValue} + 标准 {@code @ModifyVariable}），另有一个"同级不同责"的
+ * 守卫类 {@code ItemStackZeroLossGuardMixin}（类级优先级 {@code MixinPriorities.FINAL}）：
+ * <ol>
+ *   <li>{@link #newArmorSystem$ignoreUnbreakingForArmor}：护甲/盾牌的耐久附魔等级视为 0，
+ *       原版概率循环（条件 {@code level > 0}）随即被跳过；</li>
+ *   <li>{@link #newArmorSystem$deterministicUnbreaking}：护甲/盾牌的本次损耗按确定性公式压缩
+ *       —— 用 {@code @ModifyVariable} 修饰<b>形参</b>（{@code @ModifyArg} 只能修饰某次方法调用的
+ *       实参，其 {@code @At} 必须指向 INVOKE，写在 HEAD 上会被注解处理器直接判错）；</li>
+ *   <li>{@code ItemStackZeroLossGuardMixin}：公式把损耗压到 0 时在 HEAD 处取消并返回
+ *       {@code false} —— 否则会走到原版尾部 {@code damage >= maxDamage} 而对已封顶（broken）的护甲
+ *       误返 {@code true}，令 {@code hurtAndBreak} 触发 ITEM_BREAK 音效 /
+ *       {@link ItemBrokenEvent} 与 {@code shrink(1)}。它独立成类是因为<b>优先级是 {@code @Mixin}
+ *       类级属性</b>、单个注入器无法单独提升，且取消式注入让原版体根本不执行，第三方无从覆盖。</li>
+ * </ol>
+ * 原版方法体的其余部分（{@code isDamageableItem} 判定、{@code CriteriaTriggers}、
+ * {@code setDamageValue}、{@code return damage >= maxDamage}）<b>全部由原版执行</b>，本模组不再复刻
+ * ⇒ 行为逐位一致，且其它模组对 {@code hurt} 的注入 / 重定向锚点全部保留。
+ * 这正是重构的动机：旧 {@code @Overwrite} 内联了 Unbreaking 循环，会抹掉外部注入点而导致启动崩溃
+ * （实例：Apotheosis 7.4.8 的 {@code ItemStackMixin}）。
+ * <p>
+ * 本类自此为"纯注入"mixin，按 {@code MixinPriorities} 的惯例保持默认优先级 1000
+ * （不抢占层次，便于其它模组的包装器叠在本模组之上）。
  * <p>
  * 不要在此处添加 {@code remap = false}，否则发布 jar（运行时方法名为 SRG 名）会失效。
  */
-// 接管型 mixin：低优先级先写入 hurt 方法体，使其它模组的注入（如 @ModifyVariable method="hurt"）
-// 仍能落在接管后的方法上（机制与取值见 MixinPriorities）
-@Mixin(value = ItemStack.class, priority = MixinPriorities.TAKEOVER)
+@Mixin(ItemStack.class)
 public abstract class ItemStackMixin {
 
     @Shadow
@@ -96,55 +115,68 @@ public abstract class ItemStackMixin {
     public abstract Item getItem();
 
     /**
-     * 原版实现：扣除耐久前按 {@code pRandom.nextInt(level + 1) > 0} 逐点概率减免（Unbreaking 附魔），
-     * 每次损耗结果不可预测。
-     * <p>
-     * 本模组按物品类型分流：护甲（{@link ArmorItem}）与盾牌（{@link ShieldItem}）
-     * 使用确定性公式 {@code floor(pAmount / (1 + unbreakingCoefficient * level))}，
-     * 减免后剩余为 0 则直接返回 {@code false}（不掉耐久、不损坏）；
-     * 其它物品保留原版概率性减免循环，其余逻辑与目标方法体保持一致。
+     * 护甲/盾牌是否走"确定性耐久附魔重做"：开关开启（默认；配置未加载时同样视为开启，
+     * 与旧 {@code @Overwrite} 的口径一致）且物品为护甲或盾牌。
      *
-     * @author THEREDK
-     * @reason 护甲/盾牌改为可配置系数的确定性减免，其余物品保留原版概率减免
+     * <p>工具、武器、弓、鞘翅等不满足条件 ⇒ 两个注入器都原样放行，完全回到原版概率性减免。
+     * 判定本体在 {@link NewCombatRules#deterministicUnbreakingApplies}（单一事实来源），
+     * 与 {@code ItemStackZeroLossGuardMixin} 共用。
      */
-    @Overwrite
-    public boolean hurt(int pAmount, RandomSource pRandom, @Nullable ServerPlayer pUser) {
-        if (!this.isDamageableItem()) {
-            return false;
-        } else {
-            if (pAmount > 0) {
-                int UnbreakingLevel = EnchantmentHelper.getItemEnchantmentLevel(Enchantments.UNBREAKING, (ItemStack)(Object) this);
-                // 功能总开关：关闭时护甲/盾牌落入下方 else 分支，即原版概率减免，完全回到原版
-                boolean deterministicUnbreaking = !Config.COMMON_SPEC.isLoaded()
-                        || Config.COMMON.unbreakingRedefinitionEnabled.get();
-                if (deterministicUnbreaking && (this.getItem() instanceof ArmorItem || this.getItem() instanceof ShieldItem)) {
-                    if (Config.COMMON_SPEC.isLoaded()) {
-                        pAmount = (int) Math.floor(pAmount / (1.0D + Config.COMMON.unbreakingCoefficient.get() * UnbreakingLevel));
-                    } else {
-                        pAmount = (int) Math.floor(pAmount / (1.0D + UnbreakingLevel));
-                    }
-                } else {
-                    int j = 0;
-                    for (int k = 0; UnbreakingLevel > 0 && k < pAmount; ++k) {
-                        if (pRandom.nextInt(UnbreakingLevel + 1) > 0) {
-                            ++j;
-                        }
-                    }
-                    pAmount -= j;
-                }
-                if (pAmount <= 0) {
-                    return false;
-                }
-            }
+    @Unique
+    private boolean newArmorSystem$deterministicUnbreakingApplies() {
+        return NewCombatRules.deterministicUnbreakingApplies((ItemStack) (Object) this);
+    }
 
-            if (pUser != null && pAmount != 0) {
-                CriteriaTriggers.ITEM_DURABILITY_CHANGED.trigger(pUser, (ItemStack)(Object) this, this.getDamageValue() + pAmount);
-            }
+    /**
+     * 注入器 ①：把 {@code hurt} 内那一次
+     * {@code EnchantmentHelper.getItemEnchantmentLevel(UNBREAKING, stack)} 的返回值在护甲/盾牌上改为 0。
+     *
+     * <p>原版 Unbreaking 概率循环的进入条件是 {@code level > 0}，置 0 即整体跳过该循环
+     * （护甲/盾牌的免随机判定由注入器 ② 的确定性公式接管）。
+     *
+     * <p><b>作用域仅限 {@code hurt} 内的这一次调用</b>：tooltip、附魔列表等其它调用点不受影响；
+     * 本模组在注入器 ② 与守卫 mixin 中自行读取等级时也是另一次调用，拿到的是<b>真实</b>等级（未被置 0）。
+     */
+    @ModifyExpressionValue(
+            method = "hurt",
+            at = @At(value = "INVOKE",
+                    target = "Lnet/minecraft/world/item/enchantment/EnchantmentHelper;"
+                            + "getItemEnchantmentLevel(Lnet/minecraft/world/item/enchantment/Enchantment;"
+                            + "Lnet/minecraft/world/item/ItemStack;)I"))
+    private int newArmorSystem$ignoreUnbreakingForArmor(int level) {
+        return newArmorSystem$deterministicUnbreakingApplies() ? 0 : level;
+    }
 
-            int l = this.getDamageValue() + pAmount;
-            this.setDamageValue(l);
-            return l >= this.getMaxDamage();
-        }
+    /**
+     * 注入器 ②：护甲/盾牌的本次耐久损耗按确定性公式压缩
+     * {@code floor(pAmount / (1 + unbreakingCoefficient * level))}
+     * （公式与适用条件见 {@link NewCombatRules#applyDeterministicUnbreaking}，单一事实来源）。
+     *
+     * <p><b>为什么是 {@code @ModifyVariable} 而不是 {@code @ModifyArg}</b>：后者只能修饰
+     * <b>某次方法调用的实参</b>（其 {@code @At} 必须指向一次 INVOKE，写在 HEAD 上会直接被
+     * 注解处理器判定为 "This injector can only target method invocations"），改不了方法自身的形参；
+     * 修饰形参要用 {@code @ModifyVariable} + {@code index = 1}（实例方法的局部变量表中
+     * 0 = {@code this}、1 = 第一个形参 {@code pAmount}）。
+     *
+     * <p>锚点取原版 {@code hurt} 里必然存在的
+     * {@code EnchantmentHelper.getItemEnchantmentLevel(UNBREAKING, …)} 调用：它位于
+     * {@code if (pAmount > 0)} 分支内，故本注入器只在"确有损耗"时运行，与旧
+     * {@code @Overwrite} 的分流时机逐位一致；该调用点在 SRG 运行时由 refmap 映射
+     * （{@code m_44843_}），已随包验证。
+     *
+     * <p>结果为 0（低伤害完全免损）时<b>不再需要任何标志位</b>：是否误判"物品损坏"由
+     * {@code dev.newarmorsystem.mixin.ItemStackZeroLossGuardMixin} 在 HEAD 处独立裁决
+     * （类级优先级 {@code MixinPriorities.FINAL}，其取消式注入令原版方法体根本不执行，
+     * 因此任何第三方对 {@code hurt} 返回值的改写都不可能盖掉它）。
+     */
+    @ModifyVariable(method = "hurt",
+            at = @At(value = "INVOKE",
+                    target = "Lnet/minecraft/world/item/enchantment/EnchantmentHelper;"
+                            + "getItemEnchantmentLevel(Lnet/minecraft/world/item/enchantment/Enchantment;"
+                            + "Lnet/minecraft/world/item/ItemStack;)I"),
+            index = 1)
+    private int newArmorSystem$deterministicUnbreaking(int pAmount) {
+        return NewCombatRules.applyDeterministicUnbreaking(pAmount, (ItemStack) (Object) this);
     }
 
     /**

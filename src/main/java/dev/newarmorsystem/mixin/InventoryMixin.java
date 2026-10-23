@@ -48,7 +48,7 @@ import org.spongepowered.asm.mixin.Shadow;
  * @reason 将原版与韧性无关的耐久损耗公式替换为模组自定义公式
  */
 // 接管型 mixin：低优先级先写入方法体，使其它模组的注入仍能落在接管后的方法上（机制与取值见 MixinPriorities）
-@Mixin(value = Inventory.class, priority = MixinPriorities.TAKEOVER)
+@Mixin(value = Inventory.class, priority = MixinPriorities.TAKE_OVER_FINAL)
 public abstract class InventoryMixin {
 
     @Shadow

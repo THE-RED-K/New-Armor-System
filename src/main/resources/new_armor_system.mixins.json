@@ -9,6 +9,7 @@
     "RangedAttributeMixin",
     "InventoryMixin",
     "ItemStackMixin",
+    "ItemStackZeroLossGuardMixin",
     "ArmorAttributeMixin",
     "ArmorMaterialsMixin",
     "ArmorItemMixin",
@@ -16,6 +17,7 @@
     "EnchantmentHelperMixin",
     "LivingEntityFallDamageMixin",
     "ThornsEnchantmentMixin",
+    "SunderingCompatMixin",
     "ItemMixin"
   ],
   "client": [

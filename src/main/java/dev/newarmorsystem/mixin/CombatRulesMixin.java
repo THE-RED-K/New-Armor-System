@@ -18,7 +18,7 @@ import org.spongepowered.asm.mixin.Overwrite;
  * @see NewCombatRules#getDamageAfterArmor(float, float, float)
  */
 // 接管型 mixin：低优先级先写入方法体，使其它模组的注入仍能落在接管后的方法上（机制与取值见 MixinPriorities）
-@Mixin(value = CombatRules.class, priority = MixinPriorities.TAKEOVER)
+@Mixin(value = CombatRules.class, priority = MixinPriorities.TAKE_OVER_FINAL)
 public abstract class CombatRulesMixin {
     /**
      * 用新护甲减伤公式完全替换原版的 {@link CombatRules#getDamageAfterAbsorb(float, float, float)}，

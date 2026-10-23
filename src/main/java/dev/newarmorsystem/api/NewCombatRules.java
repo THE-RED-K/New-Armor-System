@@ -4,7 +4,11 @@ package dev.newarmorsystem.api;
 import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.ai.attributes.AttributeModifier;
 import net.minecraft.world.entity.ai.attributes.Attributes;
+import net.minecraft.world.item.ArmorItem;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.ShieldItem;
+import net.minecraft.world.item.enchantment.EnchantmentHelper;
+import net.minecraft.world.item.enchantment.Enchantments;
 
 /**
  * 本模组的核心战斗计算：<b>护甲减伤公式</b>与<b>护甲耐久损耗公式</b>。
@@ -15,8 +19,51 @@ import net.minecraft.world.item.ItemStack;
  * 且<b>不可关闭</b>（{@code feature_toggles} 中不存在它们的开关，见 {@code Config} 的说明）。
  * 其余所有子系统（质量、移速、击退抗性、摔落伤害、反伤、耐久附魔重做……）都建立在这两条公式之上，
  * 并各自提供独立开关。
+ *
+ * <p><b>耐久附魔重做（Unbreaking）也住在这里</b>：{@link #deterministicUnbreakingApplies} 与
+ * {@link #applyDeterministicUnbreaking} 是「护甲/盾牌按确定性公式替代原版概率减免」这一功能级规则的
+ * <b>单一事实来源</b>，由 {@code mixin.ItemStackMixin}（损耗换算）与
+ * {@code mixin.ItemStackZeroLossGuardMixin}（零损耗时不误判损坏）两个 mixin 共用 —— 避免公式在两处漂移。
  */
 public class NewCombatRules {
+
+    /**
+     * 护甲/盾牌是否走「耐久附魔重做」（确定性减免替代原版概率减免）。
+     *
+     * <p>两个条件同时满足：功能开关开启（{@code feature_toggles.unbreakingRedefinitionEnabled}，
+     * 默认开；配置未加载时同样视为开启，与旧 {@code @Overwrite} 口径一致），且物品为护甲或盾牌。
+     * 工具、武器、弓、鞘翅等不满足 ⇒ 调用方应原样放行，完全回到原版概率性减免。
+     *
+     * @param stack 待判定的物品堆
+     * @return 是否适用确定性公式
+     */
+    public static boolean deterministicUnbreakingApplies(ItemStack stack) {
+        if (Config.COMMON_SPEC.isLoaded() && !Config.COMMON.unbreakingRedefinitionEnabled.get()) {
+            return false;
+        }
+        return stack.getItem() instanceof ArmorItem || stack.getItem() instanceof ShieldItem;
+    }
+
+    /**
+     * 确定性耐久附魔重做后的本次损耗：{@code floor(amount / (1 + unbreakingCoefficient × level))}。
+     *
+     * <p>不适用时（非护甲/盾牌、开关关闭、{@code amount <= 0}）<b>原样返回</b> {@code amount} ——
+     * 由调用方按原版路径处理。护甲/盾牌上的 Unbreaking 等级照常参与计算（等级越高损耗越小），
+     * 但永远不为 0 等级特例；结果可能为 0（低伤害完全免损），此时是否触发"物品损坏"由
+     * {@code ItemStackZeroLossGuardMixin} 裁决。
+     *
+     * @param amount 本次耐久损耗（原版 {@code ItemStack#hurt} 的入参，未经耐久附魔减免）
+     * @param stack  该物品堆
+     * @return 确定性公式减免后的损耗（可能为 0）
+     */
+    public static int applyDeterministicUnbreaking(int amount, ItemStack stack) {
+        if (amount <= 0 || !deterministicUnbreakingApplies(stack)) {
+            return amount;
+        }
+        int level = EnchantmentHelper.getItemEnchantmentLevel(Enchantments.UNBREAKING, stack);
+        double coefficient = Config.COMMON_SPEC.isLoaded() ? Config.COMMON.unbreakingCoefficient.get() : 1.0;
+        return (int) Math.floor(amount / (1.0D + coefficient * level));
+    }
 
     /**
      * <b>本模组的护甲减伤公式 —— 定律级公式，不是可选项。</b>

@@ -119,6 +119,9 @@ repositories {
     // Put repositories for dependencies here
     // ForgeGradle automatically adds the Forge maven and Maven Central for you
 
+    // MixinExtras（JarJar 需要能从 Maven Central 解析；FG 默认已加入 Central，此处显式声明以防仓库顺序变化）
+    mavenCentral()
+
     // Curios（软依赖）：官方 maven，用于 compileOnly 编译期联动饰品槽
     maven {
         name = 'Curios'
@@ -141,6 +144,21 @@ dependencies {
     // （否则 addMixinsToJar 会因 annotationProcessor 配置缺少 mixin processor 而失败）
     implementation 'org.spongepowered:mixin:0.8.5'
     annotationProcessor 'org.spongepowered:mixin:0.8.5:processor'
+
+    // MixinExtras 0.5.5 —— @WrapOperation / @ModifyExpressionValue 等"只包住一次调用"的兼容性注入器。
+    // common 提供注解与 API（编译期），forge 为 Forge 平台运行期，经 JarJar 随本 jar 内置 ⇒ 自包含，
+    // 不再依赖运行环境提供该库（P0 的 3 个注入器即依赖它）。
+    // 版本范围必须写成 Maven 式开区间 [0.5.5,)：FG6 的 jarJar() 拒绝裸版本号
+    // （"The given version specification is invalid: 0.5.5"），而 version { range … } 闭包在 FG6 不存在。
+    // JarJar 运行时会按"范围交集"解析同一 artifact 的所有内置副本并选中实际打包版本最高的一份
+    // （JarSelector.select → restrictRanges → artifactVersion == recommendedVersion），写上界会压低交集。
+    implementation 'io.github.llamalad7:mixinextras-common:0.5.5'
+    annotationProcessor 'io.github.llamalad7:mixinextras-common:0.5.5'
+    jarJar.enable()
+    implementation jarJar('io.github.llamalad7:mixinextras-forge:[0.5.5,)')
+    // 离线兜底：整合包内抓取的同版本类库在 libs/MixinExtras-0.5.5.jar（505 类，含
+    // wrapoperation/Operation、ModifyExpressionValue、ModifyReturnValue）。无网环境把上面两行
+    // Maven 依赖换成 files('libs/MixinExtras-0.5.5.jar') 即可编译，但那样不会随 jar 打包。
 
     // Curios（软依赖）：compileOnly 仅编译期联动，不打包进 jar；
     // 运行时由 ModList.isLoaded("curios") 保护，未安装 Curios 也能正常运行
